@@ -1548,22 +1548,27 @@ jobs:
           - --filesystem=home
           # GPU and hardware acceleration access (critical for Steam Deck and desktop)
           - --device=dri
-          # Enable access to host graphics drivers and libraries for better compatibility
+          # Enable access to host graphics drivers and libraries
           - --filesystem=host-os
-          - --filesystem=/usr/share/drirc.d:ro
+          - --filesystem=/run/host/usr/share/vulkan:ro
+          - --filesystem=/run/host/usr/lib/x86_64-linux-gnu:ro
+          - --filesystem=/run/host/lib/x86_64-linux-gnu:ro
+          - --filesystem=/run/host/usr/lib:ro
+          - --filesystem=/run/host/lib:ro
+          # Allow access to system device information
           - --filesystem=/sys/dev/char:ro
-          - --filesystem=/sys/devices/pci0000:00:ro
-          - --filesystem=/proc/cpuinfo:ro
-          # Allow access to host system libraries for driver compatibility
-          - --filesystem=/usr/lib/x86_64-linux-gnu:ro
-          - --filesystem=/lib/x86_64-linux-gnu:ro
+          - --filesystem=/sys/class/drm:ro
           # Enhanced environment variables for hardware acceleration (universal GPU support)
-          - --env=LIBVA_DRIVERS_PATH=/run/host/usr/lib/x86_64-linux-gnu/dri:/run/host/usr/lib/dri:/usr/lib/x86_64-linux-gnu/dri
-          - --env=VDPAU_DRIVER_PATH=/run/host/usr/lib/x86_64-linux-gnu/vdpau:/run/host/usr/lib/vdpau:/usr/lib/x86_64-linux-gnu/vdpau
-          # Auto-detect VA-API driver (don't force specific driver)
-          - --env=GST_VAAPI_DRM_DEVICE=/dev/dri/renderD128
+          - --env=LIBVA_DRIVERS_PATH=/run/host/usr/lib/x86_64-linux-gnu/dri:/run/host/usr/lib/dri:/app/lib/dri:/usr/lib/x86_64-linux-gnu/dri
+          - --env=VDPAU_DRIVER_PATH=/run/host/usr/lib/x86_64-linux-gnu/vdpau:/run/host/usr/lib/vdpau:/app/lib/vdpau:/usr/lib/x86_64-linux-gnu/vdpau
           # Universal Vulkan ICD paths for AMD (Steam Deck), Intel, and NVIDIA
           - --env=VK_ICD_FILENAMES=/run/host/usr/share/vulkan/icd.d/radeon_icd.x86_64.json:/run/host/usr/share/vulkan/icd.d/intel_icd.x86_64.json:/run/host/usr/share/vulkan/icd.d/nvidia_icd.json:/usr/share/vulkan/icd.d/radeon_icd.x86_64.json:/usr/share/vulkan/icd.d/intel_icd.x86_64.json:/usr/share/vulkan/icd.d/nvidia_icd.json
+          # Vulkan layer paths
+          - --env=VK_LAYER_PATH=/run/host/usr/share/vulkan/explicit_layer.d:/run/host/usr/share/vulkan/implicit_layer.d:/usr/share/vulkan/explicit_layer.d:/usr/share/vulkan/implicit_layer.d
+          # Library path for compatibility
+          - --env=LD_LIBRARY_PATH=/app/lib:/usr/lib/x86_64-linux-gnu:/run/host/usr/lib/x86_64-linux-gnu:/run/host/lib/x86_64-linux-gnu
+          # Auto-detect VA-API driver (don't force specific driver)
+          - --env=GST_VAAPI_DRM_DEVICE=/dev/dri/renderD128
           # Allow software fallback for Vulkan if hardware fails
           - --env=PLVK_ALLOW_SOFTWARE=1
           # Steam Deck and AMD GPU optimizations
@@ -1572,6 +1577,8 @@ jobs:
           # Universal Mesa optimizations
           - --env=MESA_GLTHREAD=true
           - --env=MESA_NO_ERROR=1
+          # SDL specific optimizations
+          - --env=SDL_VIDEO_X11_FORCE_EGL=1
         add-extensions:
           # Mount host GL/Vulkan drivers from the Freedesktop runtime
           org.freedesktop.Platform.GL.default:
@@ -1621,6 +1628,32 @@ jobs:
               - type: archive
                 url: https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.20.2/SDL2_ttf-2.20.2.tar.gz
                 sha256: 9dc71ed93487521b107a2c4a9ca6bf43fb62f6bddd5c26b055e6b91418a22053
+          
+          # Build libva with proper compatibility
+          - name: libva
+            buildsystem: meson
+            config-opts:
+              - -Ddriverdir=/app/lib/dri
+              - -Dwith_x11=true
+              - -Dwith_wayland=true
+              - -Dwith_glx=true
+            sources:
+              - type: archive
+                url: https://github.com/intel/libva/releases/download/2.22.0/libva-2.22.0.tar.bz2
+                sha256: 467c418c2640a178c6baad5be2e00976ad14e8848a0165a6790d0bb40060b0ce
+          
+          # Build Intel VA-API driver for compatibility
+          - name: intel-vaapi-driver
+            buildsystem: meson
+            config-opts:
+              - -Ddriverdir=/app/lib/dri
+            sources:
+              - type: archive
+                url: https://github.com/intel/intel-vaapi-driver/releases/download/2.4.1/intel-vaapi-driver-2.4.1.tar.bz2
+                sha256: ecfaf2cb28b08b2de0425990cea3848126dc15405915a3b91296b4a5c13088be
+            build-options:
+              config-opts:
+                - -Denable-hybrid-codec=true
           
           # Build libplacebo from source for Vulkan/HDR support (critical for Steam Deck)
           - name: libplacebo
