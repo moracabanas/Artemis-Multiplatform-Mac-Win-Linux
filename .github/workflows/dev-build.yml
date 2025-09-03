@@ -1650,7 +1650,7 @@ jobs:
             sources:
               - type: archive
                 url: https://github.com/intel/intel-vaapi-driver/releases/download/2.4.1/intel-vaapi-driver-2.4.1.tar.bz2
-                sha256: ecfaf2cb28b08b2de0425990cea3848126dc15405915a3b91296b4a5c13088be
+                sha256: 0081fce08eb3a83f7d99c3b853c8fdfa0af437b8f5b0fb7c66faeb83bcbe0c19
             build-options:
               config-opts:
                 - -Denable-hybrid-codec=true
