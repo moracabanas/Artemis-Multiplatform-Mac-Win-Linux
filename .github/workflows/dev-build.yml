@@ -1634,9 +1634,9 @@ jobs:
             buildsystem: meson
             config-opts:
               - -Ddriverdir=/app/lib/dri
-              - -Dwith_x11=true
-              - -Dwith_wayland=true
-              - -Dwith_glx=true
+              - -Dwith_x11=yes
+              - -Dwith_wayland=yes
+              - -Dwith_glx=yes
             sources:
               - type: archive
                 url: https://github.com/intel/libva/releases/download/2.22.0/libva-2.22.0.tar.bz2
