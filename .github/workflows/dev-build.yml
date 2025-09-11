@@ -1769,6 +1769,82 @@ jobs:
                   install -Dm644 app/res/artemis.svg /app/share/icons/hicolor/scalable/apps/com.artemisdesktop.ArtemisDesktopDev.svg
                 fi
         EOF
+
+    - name: Build Flatpak
+      env:
+        VERSION: ${{ needs.setup-version.outputs.version }}
+      run: |
+        flatpak-builder --force-clean --repo=repo build-dir com.artemisdesktop.ArtemisDesktopDev.yml
+        # Build a bundle that embeds Flathub as the runtime repo so runtime + GPU extensions auto-install
+        flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo repo artemis-flatpak-$VERSION.flatpak com.artemisdesktop.ArtemisDesktopDev
+    
+    - name: Upload Flatpak Development Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: artemis-flatpak-${{ needs.setup-version.outputs.version }}
+        path: artemis-flatpak-${{ needs.setup-version.outputs.version }}.flatpak
+        retention-days: 30
+
+  build-raspberry-pi-dev:
+    name: Raspberry Pi ARM64 Development Build
+    needs: setup-version
+    runs-on: ubuntu-22.04-arm
+    if: needs.setup-version.outputs.should_build == 'true'
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+        fetch-depth: 0
+
+    - name: Display version info
+      run: |
+        echo "Using semantic version: ${{ needs.setup-version.outputs.version }}"
+        echo "Using numeric version: ${{ needs.setup-version.outputs.numeric_version }}"
+        echo "Is prerelease: ${{ needs.setup-version.outputs.is_prerelease }}"
+
+    - name: Install ARM64 dependencies and Qt
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          qt6-base-dev qt6-base-dev-tools qt6-declarative-dev qt6-declarative-dev-tools libqt6svg6-dev \
+          libegl1-mesa-dev libgl1-mesa-dev libopus-dev libsdl2-dev libsdl2-ttf-dev \
+          libssl-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+          libva-dev libvdpau-dev libxkbcommon-dev wayland-protocols libdrm-dev nasm libgbm-dev \
+          libfreetype6-dev libasound2-dev libdbus-1-dev libgles2-mesa-dev libglu1-mesa-dev \
+          libibus-1.0-dev libpulse-dev libudev-dev libx11-dev libxcursor-dev libxext-dev \
+          libxi-dev libxinerama-dev libxrandr-dev libxss-dev libxt-dev libxv-dev libxxf86vm-dev \
+          libxcb-dri3-dev libx11-xcb-dev libplacebo-dev
+
+    - name: Clean any existing build
+      run: |
+        rm -f .qmake.stash .qmake.cache
+        find . -name "Makefile*" -delete || true
+
+    - name: Build for Raspberry Pi ARM64
+      run: |
+        # Simple native ARM64 build - no cross-compilation needed!
+        qmake6 artemis.pro CONFIG+=release "QMAKE_CXXFLAGS+=-fPIC"
+        make -j$(nproc)
+
+    - name: Verify ARM64 binary
+      run: |
+        echo "Verifying ARM64 binary:"
+        file app/artemis
+        readelf -h app/artemis | grep Machine || true
+
+    - name: Create installation package
+      env:
+        SEMANTIC_VERSION: ${{ needs.setup-version.outputs.version }}
+      run: |
+        mkdir -p artemis-package
+        cp app/artemis artemis-package/
+        
+        # Create simple install script
+        cat > artemis-package/install.sh << 'EOF'
+        #!/bin/bash
         echo "Installing Artemis Desktop for Raspberry Pi..."
         
         # Make binary executable
