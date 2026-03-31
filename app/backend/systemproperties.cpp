@@ -3,6 +3,8 @@
 
 #include <QGuiApplication>
 #include <QLibraryInfo>
+#include <QFile>
+#include <QProcess>
 
 #include "streaming/session.h"
 #include "streaming/streamutils.h"
@@ -67,6 +69,7 @@ SystemProperties::SystemProperties()
 #endif
 
     unmappedGamepads = SdlInputHandler::getUnmappedGamepads();
+
 
     // Populate data that requires talking to SDL. We do it all in one shot
     // and cache the results to speed up future queries on this data.
@@ -158,6 +161,35 @@ void SystemProperties::querySdlVideoInfoInternal()
 
     Session::getDecoderInfo(testWindow, hasHardwareAcceleration, rendererAlwaysFullScreen, supportsHdr, maximumResolution);
 
+    // Allow environment variable override for HDR support (for testing and debugging)
+    if (qgetenv("FORCE_HDR_SUPPORT") == "1") {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SystemProperties: Forcing HDR support via FORCE_HDR_SUPPORT environment variable (was: %s)",
+                    supportsHdr ? "ENABLED" : "DISABLED");
+        supportsHdr = true;
+    }
+    
+    // Allow environment variable override for hardware acceleration (for Flatpak and testing)
+    if (qgetenv("ARTEMIS_FORCE_HW_ACCEL") == "1") {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "SystemProperties: Forcing hardware acceleration via ARTEMIS_FORCE_HW_ACCEL environment variable (was: %s)",
+                    hasHardwareAcceleration ? "ENABLED" : "DISABLED");
+        hasHardwareAcceleration = true;
+    }
+    
+    // Additional debug logging for HDR capability investigation
+    if (qgetenv("HDR_DEBUG") == "1") {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "SystemProperties HDR Debug: Hardware acceleration=%s, Renderer fullscreen=%s, HDR support=%s",
+                    hasHardwareAcceleration ? "YES" : "NO",
+                    rendererAlwaysFullScreen ? "YES" : "NO", 
+                    supportsHdr ? "YES" : "NO");
+    }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "SystemProperties: Final HDR support status: %s", 
+                supportsHdr ? "ENABLED" : "DISABLED");
+
     SDL_DestroyWindow(testWindow);
 
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -245,6 +277,5 @@ void SystemProperties::refreshDisplaysInternal()
             }
         }
     }
-
-    SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
+

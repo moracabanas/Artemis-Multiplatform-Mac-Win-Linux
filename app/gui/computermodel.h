@@ -16,7 +16,8 @@ class ComputerModel : public QAbstractListModel
         WakeableRole,
         StatusUnknownRole,
         ServerSupportedRole,
-        DetailsRole
+        DetailsRole,
+        ApolloVersionRole
     };
 
 public:
@@ -36,6 +37,10 @@ public:
     Q_INVOKABLE QString generatePinString();
 
     Q_INVOKABLE void pairComputer(int computerIndex, QString pin);
+
+    Q_INVOKABLE void pairComputerWithOTP(int computerIndex, QString pin, QString passphrase);
+
+    Q_INVOKABLE bool isOTPSupported(int computerIndex);
 
     Q_INVOKABLE void testConnectionForComputer(int computerIndex);
 

@@ -1,4 +1,6 @@
 #include "computermodel.h"
+#include "backend/serverpermissions.h"
+#include "settings/artemissettings.h"
 
 #include <QThreadPool>
 
@@ -42,6 +44,8 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->state == NvComputer::CS_UNKNOWN;
     case ServerSupportedRole:
         return computer->isSupportedServerVersion;
+    case ApolloVersionRole:
+        return computer->apolloVersion;
     case DetailsRole: {
         QString state, pairState;
 
@@ -69,18 +73,48 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
             break;
         }
 
-        return tr("Name: %1").arg(computer->name) + '\n' +
-               tr("Status: %1").arg(state) + '\n' +
-               tr("Active Address: %1").arg(computer->activeAddress.toString()) + '\n' +
-               tr("UUID: %1").arg(computer->uuid) + '\n' +
-               tr("Local Address: %1").arg(computer->localAddress.toString()) + '\n' +
-               tr("Remote Address: %1").arg(computer->remoteAddress.toString()) + '\n' +
-               tr("IPv6 Address: %1").arg(computer->ipv6Address.toString()) + '\n' +
-               tr("Manual Address: %1").arg(computer->manualAddress.toString()) + '\n' +
-               tr("MAC Address: %1").arg(computer->macAddress.isEmpty() ? tr("Unknown") : QString(computer->macAddress.toHex(':'))) + '\n' +
-               tr("Pair State: %1").arg(pairState) + '\n' +
-               tr("Running Game ID: %1").arg(computer->state == NvComputer::CS_ONLINE ? QString::number(computer->currentGameId) : tr("Unknown")) + '\n' +
-               tr("HTTPS Port: %1").arg(computer->state == NvComputer::CS_ONLINE ? QString::number(computer->activeHttpsPort) : tr("Unknown"));
+        QString details;
+        
+        // Basic Information Section
+        details += tr("═══ COMPUTER INFORMATION ═══") + '\n';
+        details += tr("Name: %1").arg(computer->name) + '\n';
+        details += tr("Status: %1").arg(state) + '\n';
+        details += tr("Pair State: %1").arg(pairState) + '\n';
+        details += tr("Running Game: %1").arg(computer->state == NvComputer::CS_ONLINE ? 
+                     (computer->currentGameId != 0 ? QString::number(computer->currentGameId) : tr("None")) : 
+                     tr("Unknown")) + '\n';
+        
+        // Network Information Section
+        details += '\n' + tr("═══ NETWORK INFORMATION ═══") + '\n';
+        details += tr("Active Address: %1").arg(computer->activeAddress.toString()) + '\n';
+        details += tr("Local Address: %1").arg(computer->localAddress.toString()) + '\n';
+        details += tr("Remote Address: %1").arg(computer->remoteAddress.toString()) + '\n';
+        details += tr("IPv6 Address: %1").arg(computer->ipv6Address.toString()) + '\n';
+        details += tr("Manual Address: %1").arg(computer->manualAddress.toString()) + '\n';
+        details += tr("HTTPS Port: %1").arg(computer->state == NvComputer::CS_ONLINE ? QString::number(computer->activeHttpsPort) : tr("Unknown")) + '\n';
+        
+        // System Information Section
+        details += '\n' + tr("═══ SYSTEM INFORMATION ═══") + '\n';
+        details += tr("UUID: %1").arg(computer->uuid) + '\n';
+        details += tr("MAC Address: %1").arg(computer->macAddress.isEmpty() ? tr("Unknown") : QString(computer->macAddress.toHex(':'))) + '\n';
+
+        // Server Capabilities Section (Apollo/Sunshine servers only)
+        if (computer->serverPermissions != 0) {
+            details += '\n' + tr("═══ SERVER CAPABILITIES ═══") + '\n';
+            
+            QString detailedPermissions = ServerPermissions::getDetailedPermissions(computer->serverPermissions);
+            if (!detailedPermissions.isEmpty()) {
+                details += detailedPermissions;
+            }
+        }
+        
+        // Server Commands Section
+        if (!computer->serverCommands.isEmpty()) {
+            details += '\n' + tr("═══ SERVER COMMANDS ═══") + '\n';
+            details += tr("Available Commands: %1").arg(computer->serverCommands.join(", "));
+        }
+
+        return details;
     }
     default:
         return QVariant();
@@ -110,6 +144,7 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[StatusUnknownRole] = "statusUnknown";
     names[ServerSupportedRole] = "serverSupported";
     names[DetailsRole] = "details";
+    names[ApolloVersionRole] = "apolloVersion";
 
     return names;
 }
@@ -220,9 +255,29 @@ void ComputerModel::pairComputer(int computerIndex, QString pin)
     m_ComputerManager->pairHost(m_Computers[computerIndex], pin);
 }
 
+void ComputerModel::pairComputerWithOTP(int computerIndex, QString pin, QString passphrase)
+{
+    Q_ASSERT(computerIndex < m_Computers.count());
+
+    m_ComputerManager->pairHostWithOTP(m_Computers[computerIndex], pin, passphrase);
+}
+
+bool ComputerModel::isOTPSupported(int computerIndex)
+{
+    Q_ASSERT(computerIndex < m_Computers.count());
+
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    
+    // OTP pairing is only available with Apollo/Sunshine servers (not Nvidia GeForce Experience)
+    return !computer->isNvidiaServerSoftware;
+}
+
 void ComputerModel::handlePairingCompleted(NvComputer*, QString error)
 {
+    qDebug() << "ComputerModel::handlePairingCompleted called with error:" << error;
     emit pairingCompleted(error.isEmpty() ? QVariant() : error);
+    qDebug() << "ComputerModel: Emitted pairingCompleted signal";
 }
 
 void ComputerModel::handleComputerStateChanged(NvComputer* computer)

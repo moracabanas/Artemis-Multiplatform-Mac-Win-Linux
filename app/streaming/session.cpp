@@ -2,6 +2,9 @@
 #include "settings/streamingpreferences.h"
 #include "streaming/streamutils.h"
 #include "backend/richpresencemanager.h"
+#include "backend/quickmenumanager.h"
+#include "backend/servercommandmanager.h"
+#include "backend/clipboardmanager.h"
 
 #include <Limelight.h>
 #include "SDL_compat.h"
@@ -444,6 +447,14 @@ void Session::getDecoderInfo(SDL_Window* window,
             // have the required GPU driver support for any HDR renderers.
             isHdrSupported = false;
         }
+
+        // Try AV1 Main8 as fallback to check for general AV1 hardware support
+        // This allows AV1 to work even if 10-bit/HDR is not supported
+        if (chooseDecoder(StreamingPreferences::VDS_FORCE_HARDWARE,
+                          window, VIDEO_FORMAT_AV1_MAIN8, 1920, 1080, 60,
+                          false, false, true, decoder)) {
+            delete decoder;
+        }
     }
 
     // Try a regular hardware accelerated HEVC decoder now
@@ -489,6 +500,19 @@ void Session::getDecoderInfo(SDL_Window* window,
                  "Failed to find ANY working H.264 or HEVC decoder!");
 }
 
+int Session::getActualFpsForDecoderTest() const
+{
+    int fps = m_StreamConfig.fps;
+    
+    // If fractional refresh rate is enabled, the fps might be multiplied by 1000 for Apollo
+    if (m_Preferences->enableFractionalRefreshRate && fps > 1000) {
+        // Convert back from Apollo's internal representation (fps * 1000) to actual fps
+        fps = fps / 1000;
+    }
+    
+    return fps;
+}
+
 Session::DecoderAvailability
 Session::getDecoderAvailability(SDL_Window* window,
                                 StreamingPreferences::VideoDecoderSelection vds,
@@ -507,16 +531,26 @@ Session::getDecoderAvailability(SDL_Window* window,
     return hw ? DecoderAvailability::Hardware : DecoderAvailability::Software;
 }
 
+void Session::toggleQuickMenu()
+{
+    if (m_QuickMenuManager) {
+        m_QuickMenuManager->toggle();
+    }
+}
+
 bool Session::populateDecoderProperties(SDL_Window* window)
 {
     IVideoDecoder* decoder;
+
+    // Use actual fps for decoder testing (handles Apollo's fps * 1000 representation)
+    int testFps = getActualFpsForDecoderTest();
 
     if (!chooseDecoder(m_Preferences->videoDecoderSelection,
                        window,
                        m_SupportedVideoFormats.first(),
                        m_StreamConfig.width,
                        m_StreamConfig.height,
-                       m_StreamConfig.fps,
+                       testFps,
                        false, false, true, decoder)) {
         return false;
     }
@@ -582,8 +616,11 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_PortTestResults(0),
       m_OpusDecoder(nullptr),
       m_AudioRenderer(nullptr),
-      m_AudioSampleCount(0),
-      m_DropAudioEndTime(0)
+    m_AudioSampleCount(0),
+    m_DropAudioEndTime(0),
+    m_QuickMenuManager(new QuickMenuManager()),
+    m_ServerCommandManager(new ServerCommandManager()),
+    m_ClipboardManager(ClipboardManager::instance())
 {
 }
 
@@ -642,6 +679,19 @@ bool Session::initialize()
     m_StreamConfig.width = m_Preferences->width;
     m_StreamConfig.height = m_Preferences->height;
 
+    // Artemis Apollo integration: Apply resolution scaling if enabled
+    if (m_Preferences->enableResolutionScaling && m_Preferences->resolutionScaleFactor != 100) {
+        // Apply scaling factor to resolution
+        m_StreamConfig.width = (m_StreamConfig.width * m_Preferences->resolutionScaleFactor) / 100;
+        m_StreamConfig.height = (m_StreamConfig.height * m_Preferences->resolutionScaleFactor) / 100;
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Applied resolution scaling factor %d%%: %dx%d -> %dx%d",
+                    m_Preferences->resolutionScaleFactor,
+                    m_Preferences->width, m_Preferences->height,
+                    m_StreamConfig.width, m_StreamConfig.height);
+    }
+
     int x, y, width, height;
     getWindowDimensions(x, y, width, height);
 
@@ -671,6 +721,19 @@ bool Session::initialize()
 
     m_StreamConfig.fps = m_Preferences->fps;
     m_StreamConfig.bitrate = m_Preferences->bitrateKbps;
+
+    // Artemis Apollo integration: Apply fractional refresh rate if enabled
+    if (m_Preferences->enableFractionalRefreshRate) {
+        // Convert fractional refresh rate to integer (multiply by 1000 for precision)
+        // This matches Apollo's internal representation: fps * 1000
+        int fractionalFps = (int)(m_Preferences->customRefreshRate * 1000);
+        m_StreamConfig.fps = fractionalFps;
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Applied fractional refresh rate: %.2f Hz (internal: %d)",
+                    m_Preferences->customRefreshRate,
+                    fractionalFps);
+    }
 
 #ifndef STEAM_LINK
     // Opt-in to all encryption features if we detect that the platform
@@ -750,7 +813,7 @@ bool Session::initialize()
                                                  (m_Preferences->enableHdr ? VIDEO_FORMAT_H265_MAIN10 : VIDEO_FORMAT_H265),
                                              m_StreamConfig.width,
                                              m_StreamConfig.height,
-                                             m_StreamConfig.fps);
+                                             getActualFpsForDecoderTest());
         if (hevcDA == DecoderAvailability::None && m_Preferences->enableHdr) {
             // Remove all 10-bit HEVC profiles
             m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_H265 & VIDEO_FORMAT_MASK_10BIT);
@@ -761,20 +824,28 @@ bool Session::initialize()
                                                 m_Preferences->enableYUV444 ? VIDEO_FORMAT_AV1_HIGH10_444 : VIDEO_FORMAT_AV1_MAIN10,
                                                 m_StreamConfig.width,
                                                 m_StreamConfig.height,
-                                                m_StreamConfig.fps);
+                                                getActualFpsForDecoderTest());
             if (av1DA == DecoderAvailability::None) {
-                // Remove all 10-bit AV1 profiles
-                m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1 & VIDEO_FORMAT_MASK_10BIT);
+                // Allow environment variable override for AV1 support (for testing and debugging)
+                if (qgetenv("FORCE_AV1_SUPPORT") == "1") {
+                    SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                "Session: Forcing AV1 10-bit support via FORCE_AV1_SUPPORT environment variable (AV1 10-bit decoder availability was: NONE)");
+                }
+                else {
+                    // Remove all 10-bit AV1 profiles
+                    m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1 & VIDEO_FORMAT_MASK_10BIT);
 
-                // There are no available 10-bit profiles, so reprobe for 8-bit HEVC
-                // and we'll proceed as normal for an SDR streaming scenario.
-                SDL_assert(!(m_SupportedVideoFormats & VIDEO_FORMAT_MASK_10BIT));
+                    // There are no available 10-bit profiles, so reprobe for 8-bit HEVC
+                    // and we'll proceed as normal for an SDR streaming scenario.
+                    SDL_assert(!(m_SupportedVideoFormats & VIDEO_FORMAT_MASK_10BIT));
+                }
+                
                 hevcDA = getDecoderAvailability(testWindow,
                                                 m_Preferences->videoDecoderSelection,
                                                 m_Preferences->enableYUV444 ? VIDEO_FORMAT_H265_REXT8_444 : VIDEO_FORMAT_H265,
                                                 m_StreamConfig.width,
                                                 m_StreamConfig.height,
-                                                m_StreamConfig.fps);
+                                                getActualFpsForDecoderTest());
             }
         }
 
@@ -796,7 +867,7 @@ bool Session::initialize()
                                         (m_Preferences->enableHdr ? VIDEO_FORMAT_AV1_MAIN10 : VIDEO_FORMAT_AV1_MAIN8),
                                    m_StreamConfig.width,
                                    m_StreamConfig.height,
-                                   m_StreamConfig.fps) != DecoderAvailability::Hardware) {
+                                   getActualFpsForDecoderTest()) != DecoderAvailability::Hardware) {
             // Deprioritize AV1 unless we can't hardware decode HEVC and have HDR enabled.
             // We want to keep AV1 at the top of the list for HDR with software decoding
             // because dav1d is higher performance than FFmpeg's HEVC software decoder.
@@ -953,6 +1024,32 @@ bool Session::initialize()
         }
     }
 
+    // Initialize ServerCommandManager and ClipboardManager after everything is configured
+    if (m_ServerCommandManager && m_QuickMenuManager && m_ClipboardManager) {
+        // Set up the ServerCommandManager with the computer and HTTP client
+        NvHTTP* httpClient = new NvHTTP(m_Computer);
+        m_ServerCommandManager->setConnection(m_Computer, httpClient);
+        
+        // Set up the ClipboardManager with the same HTTP client
+        m_ClipboardManager->setConnection(m_Computer, httpClient);
+        
+        // Connect the ServerCommandManager to the QuickMenuManager
+        m_QuickMenuManager->setServerCommandManager(m_ServerCommandManager);
+        
+        // Connect the ClipboardManager to the QuickMenuManager
+        m_QuickMenuManager->setClipboardManager(m_ClipboardManager);
+        
+        // Connect signals for permission updates
+        connect(m_ServerCommandManager, &ServerCommandManager::permissionChanged,
+                m_QuickMenuManager, &QuickMenuManager::serverCommandsChanged);
+        
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "ServerCommandManager and ClipboardManager initialized and connected to QuickMenuManager");
+    } else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "Failed to initialize ServerCommandManager, ClipboardManager or QuickMenuManager is null");
+    }
+
     return true;
 }
 
@@ -983,10 +1080,17 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                 emitLaunchWarning(tr("Your host software or GPU doesn't support encoding AV1."));
             }
 
-            // Moonlight-common-c will handle this case already, but we want
-            // to set this explicitly here so we can do our hardware acceleration
-            // check below.
-            m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1);
+            // Allow environment variable override for AV1 support (for testing and debugging)
+            if (qgetenv("FORCE_AV1_SUPPORT") == "1") {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                            "Session: Forcing AV1 support via FORCE_AV1_SUPPORT environment variable (server codec support was: DISABLED)");
+            }
+            else {
+                // Moonlight-common-c will handle this case already, but we want
+                // to set this explicitly here so we can do our hardware acceleration
+                // check below.
+                m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_MASK_AV1);
+            }
         }
         else if (!m_Preferences->enableHdr && // HDR is checked below
                  m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_AUTO && // Force hardware decoding checked below
@@ -996,7 +1100,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                         VIDEO_FORMAT_AV1_MAIN8,
                                         m_StreamConfig.width,
                                         m_StreamConfig.height,
-                                        m_StreamConfig.fps) != DecoderAvailability::Hardware) {
+                                        getActualFpsForDecoderTest()) != DecoderAvailability::Hardware) {
             emitLaunchWarning(tr("Using software decoding due to your selection to force AV1 without GPU support. This may cause poor streaming performance."));
         }
     }
@@ -1020,7 +1124,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                         VIDEO_FORMAT_H265,
                                         m_StreamConfig.width,
                                         m_StreamConfig.height,
-                                        m_StreamConfig.fps) != DecoderAvailability::Hardware) {
+                                        getActualFpsForDecoderTest()) != DecoderAvailability::Hardware) {
             emitLaunchWarning(tr("Using software decoding due to your selection to force HEVC without GPU support. This may cause poor streaming performance."));
         }
     }
@@ -1032,7 +1136,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                    VIDEO_FORMAT_H264,
                                    m_StreamConfig.width,
                                    m_StreamConfig.height,
-                                   m_StreamConfig.fps) != DecoderAvailability::Hardware) {
+                                   getActualFpsForDecoderTest()) != DecoderAvailability::Hardware) {
 
         if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_FORCE_H264) {
             emitLaunchWarning(tr("Using software decoding due to your selection to force H.264 without GPU support. This may cause poor streaming performance."));
@@ -1044,7 +1148,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                            VIDEO_FORMAT_H265,
                                            m_StreamConfig.width,
                                            m_StreamConfig.height,
-                                           m_StreamConfig.fps) == DecoderAvailability::Hardware) {
+                                           getActualFpsForDecoderTest()) == DecoderAvailability::Hardware) {
                 emitLaunchWarning(tr("Your host PC and client PC don't support the same video codecs. This may cause poor streaming performance."));
             }
             else {
@@ -1076,10 +1180,18 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                                  VIDEO_FORMAT_AV1_MAIN10,
                                                  m_StreamConfig.width,
                                                  m_StreamConfig.height,
-                                                 m_StreamConfig.fps);
+                                                 getActualFpsForDecoderTest());
                 if (da == DecoderAvailability::None) {
                     emitLaunchWarning(tr("This PC's GPU doesn't support AV1 Main10 decoding for HDR streaming."));
-                    m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_AV1_MAIN10);
+                    
+                    // Allow environment variable override for AV1 support (for testing and debugging)
+                    if (qgetenv("FORCE_AV1_SUPPORT") == "1") {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                                    "Session: Forcing AV1 Main10 support via FORCE_AV1_SUPPORT environment variable (decoder availability was: NONE)");
+                    }
+                    else {
+                        m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_AV1_MAIN10);
+                    }
                 }
                 else if (da == DecoderAvailability::Software &&
                            m_Preferences->videoDecoderSelection != StreamingPreferences::VDS_FORCE_SOFTWARE &&
@@ -1094,7 +1206,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                                  VIDEO_FORMAT_H265_MAIN10,
                                                  m_StreamConfig.width,
                                                  m_StreamConfig.height,
-                                                 m_StreamConfig.fps);
+                                                 getActualFpsForDecoderTest());
                 if (da == DecoderAvailability::None) {
                     emitLaunchWarning(tr("This PC's GPU doesn't support HEVC Main10 decoding for HDR streaming."));
                     m_SupportedVideoFormats.removeByMask(VIDEO_FORMAT_H265_MAIN10);
@@ -1136,7 +1248,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                               m_SupportedVideoFormats.front(),
                                               m_StreamConfig.width,
                                               m_StreamConfig.height,
-                                              m_StreamConfig.fps) != DecoderAvailability::Hardware) {
+                                              getActualFpsForDecoderTest()) != DecoderAvailability::Hardware) {
                     if (m_Preferences->videoDecoderSelection == StreamingPreferences::VDS_FORCE_HARDWARE) {
                         m_SupportedVideoFormats.removeFirst();
                     }
@@ -1216,7 +1328,7 @@ bool Session::validateLaunch(SDL_Window* testWindow)
                                    m_SupportedVideoFormats.front(),
                                    m_StreamConfig.width,
                                    m_StreamConfig.height,
-                                   m_StreamConfig.fps) != DecoderAvailability::Hardware) {
+                                   getActualFpsForDecoderTest()) != DecoderAvailability::Hardware) {
         if (m_Preferences->videoCodecConfig == StreamingPreferences::VCC_AUTO) {
             emit displayLaunchError(tr("Your selection to force hardware decoding cannot be satisfied due to missing hardware decoding support on this PC's GPU."));
         }
@@ -1387,10 +1499,22 @@ void Session::updateOptimalWindowDisplayMode()
 {
     SDL_DisplayMode desktopMode, bestMode, mode;
     int displayIndex = SDL_GetWindowDisplayIndex(m_Window);
+    
+    // Check if we should enable aspect ratio debug logging
+    bool aspectRatioDebug = qgetenv("HDR_DEBUG") == "1" || qgetenv("ASPECT_RATIO_DEBUG") == "1";
 
     // Try the current display mode first. On macOS, this will be the normal
     // scaled desktop resolution setting.
     if (SDL_GetDesktopDisplayMode(displayIndex, &desktopMode) == 0) {
+
+        if (aspectRatioDebug) {
+            float videoAspectRatio = (float)m_ActiveVideoWidth / (float)m_ActiveVideoHeight;
+            float desktopAspectRatio = (float)desktopMode.w / (float)desktopMode.h;
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Aspect Ratio Debug: Video stream=%dx%d (%.3f), Desktop=%dx%d (%.3f)",
+                        m_ActiveVideoWidth, m_ActiveVideoHeight, videoAspectRatio,
+                        desktopMode.w, desktopMode.h, desktopAspectRatio);
+        }
         // If this doesn't fit the selected resolution, use the native
         // resolution of the panel (unscaled).
         if (desktopMode.w < m_ActiveVideoWidth || desktopMode.h < m_ActiveVideoHeight) {
@@ -1414,7 +1538,7 @@ void Session::updateOptimalWindowDisplayMode()
     for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
         if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
             if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
-                    mode.refresh_rate % m_StreamConfig.fps == 0) {
+                    mode.refresh_rate % getActualFpsForDecoderTest() == 0) {
                 SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                             "Found display mode with desktop resolution: %dx%dx%d",
                             mode.w, mode.h, mode.refresh_rate);
@@ -1428,30 +1552,50 @@ void Session::updateOptimalWindowDisplayMode()
     // If we didn't find a mode that matched the current resolution and
     // had a high enough refresh rate, start looking for lower resolution
     // modes that can meet the required refresh rate and minimum video
-    // resolution. We will also try to pick a display mode that matches
-    // aspect ratio closest to the video stream.
-    if (bestMode.refresh_rate == 0) {
-        float bestModeAspectRatio = 0;
-        float videoAspectRatio = (float)m_ActiveVideoWidth / (float)m_ActiveVideoHeight;
-        for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
-            if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
-                float modeAspectRatio = (float)mode.w / (float)mode.h;
-                if (mode.w >= m_ActiveVideoWidth && mode.h >= m_ActiveVideoHeight &&
-                        mode.refresh_rate % m_StreamConfig.fps == 0) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                "Found display mode with video resolution: %dx%dx%d",
-                                mode.w, mode.h, mode.refresh_rate);
-                    if (mode.refresh_rate >= bestMode.refresh_rate &&
-                            (bestModeAspectRatio == 0 || fabs(videoAspectRatio - modeAspectRatio) <= fabs(videoAspectRatio - bestModeAspectRatio))) {
-                        bestMode = mode;
-                        bestModeAspectRatio = modeAspectRatio;
+        // resolution. We will also try to pick a display mode that matches
+        // aspect ratio closest to the video stream.
+        if (bestMode.refresh_rate == 0) {
+            float bestModeAspectRatio = 0;
+            float videoAspectRatio = (float)m_ActiveVideoWidth / (float)m_ActiveVideoHeight;
+            
+            if (aspectRatioDebug) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "Aspect Ratio Debug: Looking for display modes matching video aspect ratio %.3f",
+                            videoAspectRatio);
+            }
+            
+            for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
+                if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
+                    float modeAspectRatio = (float)mode.w / (float)mode.h;
+                    if (mode.w >= m_ActiveVideoWidth && mode.h >= m_ActiveVideoHeight &&
+                            mode.refresh_rate % getActualFpsForDecoderTest() == 0) {
+                        
+                        if (aspectRatioDebug) {
+                            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                        "Aspect Ratio Debug: Considering mode %dx%dx%d (%.3f) - aspect diff=%.3f",
+                                        mode.w, mode.h, mode.refresh_rate, modeAspectRatio,
+                                        fabs(videoAspectRatio - modeAspectRatio));
+                        }
+                        
+                        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                    "Found display mode with video resolution: %dx%dx%d",
+                                    mode.w, mode.h, mode.refresh_rate);
+                        if (mode.refresh_rate >= bestMode.refresh_rate &&
+                                (bestModeAspectRatio == 0 || fabs(videoAspectRatio - modeAspectRatio) <= fabs(videoAspectRatio - bestModeAspectRatio))) {
+                            bestMode = mode;
+                            bestModeAspectRatio = modeAspectRatio;
+                            
+                            if (aspectRatioDebug) {
+                                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                            "Aspect Ratio Debug: New best mode %dx%dx%d (%.3f) - diff=%.3f",
+                                            mode.w, mode.h, mode.refresh_rate, modeAspectRatio,
+                                            fabs(videoAspectRatio - modeAspectRatio));
+                            }
+                        }
                     }
                 }
             }
-        }
-    }
-
-    if (bestMode.refresh_rate == 0) {
+        }    if (bestMode.refresh_rate == 0) {
         // We may find no match if the user has moved a 120 FPS
         // stream onto a 60 Hz monitor (since no refresh rate can
         // divide our FPS setting). We'll stick to the default in
@@ -1587,7 +1731,7 @@ bool Session::startConnectionAsync()
         NvHTTP http(m_Computer);
         http.startApp(m_Computer->currentGameId != 0 ? "resume" : "launch",
                       m_Computer->isNvidiaServerSoftware,
-                      m_App.id, &m_StreamConfig,
+                      m_App.id, m_App.uuid, &m_StreamConfig,
                       enableGameOptimizations,
                       m_Preferences->playAudioOnHost,
                       m_InputHandler->getAttachedGamepadMask(),
@@ -1930,7 +2074,21 @@ void Session::execInternal()
 
     m_InputHandler->setWindow(m_Window);
 
-    QSvgRenderer svgIconRenderer(QString(":/res/moonlight.svg"));
+    // Set window geometry for QuickMenuManager
+    if (m_QuickMenuManager) {
+        // Get actual window position after SDL window creation
+        int actualX, actualY;
+        SDL_GetWindowPosition(m_Window, &actualX, &actualY);
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                    "Setting QuickMenuManager geometry: %d,%d %dx%d (actual pos: %d,%d)", 
+                    x, y, width, height, actualX, actualY);
+        m_QuickMenuManager->setWindowGeometry(actualX, actualY, width, height);
+    } else {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                    "QuickMenuManager is null when trying to set geometry");
+    }
+
+    QSvgRenderer svgIconRenderer(QString(":/res/artemis.svg"));
     QImage svgImage(ICON_SIZE, ICON_SIZE, QImage::Format_RGBA8888);
     svgImage.fill(0);
 
@@ -2098,6 +2256,11 @@ void Session::execInternal()
                     m_AudioMuted = true;
                 }
                 m_InputHandler->notifyFocusLost();
+                
+                // Trigger clipboard sync from server when focus is lost
+                if (m_ClipboardManager) {
+                    m_ClipboardManager->onFocusLost();
+                }
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 if (m_Preferences->muteOnFocusLoss) {
@@ -2250,7 +2413,7 @@ void Session::execInternal()
                 // than the display.
                 int displayHz = StreamUtils::getDisplayRefreshRate(m_Window);
                 bool enableVsync = m_Preferences->enableVsync;
-                if (displayHz + 5 < m_StreamConfig.fps) {
+                if (displayHz + 5 < getActualFpsForDecoderTest()) {
                     SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
                                 "Disabling V-sync because refresh rate limit exceeded");
                     enableVsync = false;

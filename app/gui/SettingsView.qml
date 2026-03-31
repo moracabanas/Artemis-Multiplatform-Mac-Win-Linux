@@ -7,6 +7,8 @@ import StreamingPreferences 1.0
 import ComputerManager 1.0
 import SdlGamepadKeyNavigation 1.0
 import SystemProperties 1.0
+import ClipboardManager 1.0
+import ServerCommandManager 1.0
 
 Flickable {
     id: settingsPage
@@ -17,7 +19,7 @@ Flickable {
     boundsBehavior: Flickable.OvershootBounds
 
     contentWidth: settingsColumn1.width > settingsColumn2.width ? settingsColumn1.width : settingsColumn2.width
-    contentHeight: settingsColumn1.height > settingsColumn2.height ? settingsColumn1.height : settingsColumn2.height
+    contentHeight: (settingsColumn1.height > settingsColumn2.height ? settingsColumn1.height : settingsColumn2.height) + 50
 
     ScrollBar.vertical: ScrollBar {
         anchors {
@@ -462,25 +464,33 @@ Flickable {
                         }
 
                         NavigableDialog {
+                            property bool isRefreshRateMode: false
+                            
                             function isInputValid() {
                                 // If we have text that isn't valid, reject the input.
                                 if (!fpsField.acceptableInput && fpsField.text) {
                                     return false
                                 }
 
-                                // The textbox needs to have text or placeholder text
-                                if (!fpsField.text && !fpsField.placeholderText) {
-                                    return false
-                                }
-
+                                // Allow empty field (will use placeholder text) or valid input
                                 return true
                             }
 
                             id: customFpsDialog
+                            title: qsTr("Custom Display Refresh Rate")
                             standardButtons: Dialog.Ok | Dialog.Cancel
                             onOpened: {
                                 // Force keyboard focus on the textbox so keyboard navigation works
                                 fpsField.forceActiveFocus()
+
+                                // Check if we have a saved custom refresh rate value
+                                if (StreamingPreferences.enableFractionalRefreshRate && StreamingPreferences.customRefreshRate > 0) {
+                                    fpsField.text = StreamingPreferences.customRefreshRate.toString()
+                                    customFpsDialog.isRefreshRateMode = true
+                                } else {
+                                    fpsField.text = ""
+                                    customFpsDialog.isRefreshRateMode = false
+                                }
 
                                 // standardButton() was added in Qt 5.10, so we must check for it first
                                 if (customFpsDialog.standardButton) {
@@ -503,41 +513,96 @@ Flickable {
                                     return
                                 }
 
-                                var fps = fpsField.text ? fpsField.text : fpsField.placeholderText
+                                // Check if user entered a value
+                                var enteredValue = fpsField.text ? fpsField.text : fpsField.placeholderText
+                                var hasCustomValue = fpsField.text && fpsField.text.trim() !== ""
+                                
+                                if (hasCustomValue) {
+                                    // User entered a custom refresh rate - enable fractional refresh rate mode
+                                    var refreshRate = parseFloat(enteredValue)
+                                    if (!isNaN(refreshRate)) {
+                                        StreamingPreferences.customRefreshRate = refreshRate
+                                        StreamingPreferences.enableFractionalRefreshRate = true
+                                        StreamingPreferences.fps = Math.round(refreshRate)
+                                        
+                                        // Update the FPS dropdown to reflect the new value
+                                        for (var i = 0; i < fpsListModel.count; i++) {
+                                            if (fpsListModel.get(i).is_custom) {
+                                                fpsListModel.setProperty(i, "video_fps", Math.round(refreshRate).toString())
+                                                fpsListModel.setProperty(i, "text", qsTr("Custom (%1 Hz)").arg(refreshRate.toFixed(2)))
+                                                fpsComboBox.currentIndex = i
+                                                fpsComboBox.updateBitrateForSelection()
+                                                fpsComboBox.recalculateWidth()
+                                                break
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // User didn't enter a value - disable fractional refresh rate mode
+                                    StreamingPreferences.enableFractionalRefreshRate = false
+                                    
+                                    // Use default/standard FPS value 
+                                    var fps = parseInt(fpsField.placeholderText)
+                                    if (isNaN(fps)) fps = 60 // fallback to 60 FPS
+                                    
+                                    StreamingPreferences.fps = fps
 
-                                // Find and update the custom entry
-                                for (var i = 0; i < fpsListModel.count; i++) {
-                                    if (fpsListModel.get(i).is_custom) {
-                                        fpsListModel.setProperty(i, "video_fps", fps)
-                                        fpsListModel.setProperty(i, "text", qsTr("Custom (%1 FPS)").arg(fps))
+                                    // Find and update the custom entry
+                                    for (var i = 0; i < fpsListModel.count; i++) {
+                                        if (fpsListModel.get(i).is_custom) {
+                                            fpsListModel.setProperty(i, "video_fps", fps.toString())
+                                            fpsListModel.setProperty(i, "text", qsTr("Custom (%1 FPS)").arg(fps))
 
-                                        // Now update the bitrate using the custom resolution
-                                        fpsComboBox.currentIndex = i
-                                        fpsComboBox.updateBitrateForSelection()
+                                            // Now update the bitrate using the custom resolution
+                                            fpsComboBox.currentIndex = i
+                                            fpsComboBox.updateBitrateForSelection()
 
-                                        // Update the combobox width too
-                                        fpsComboBox.recalculateWidth()
-                                        break
+                                            // Update the combobox width too
+                                            fpsComboBox.recalculateWidth()
+                                            break
+                                        }
                                     }
                                 }
                             }
 
                             ColumnLayout {
+                                anchors.centerIn: parent
+                                width: Math.max(300, customFpsDialog.availableWidth)
+                                spacing: 10
+
                                 Label {
-                                    text: qsTr("Enter a custom frame rate:")
+                                    text: qsTr("Enter a custom display refresh rate (Hz):")
                                     font.bold: true
                                 }
 
                                 RowLayout {
-                                    TextField {
-                                        id: fpsField
-                                        maximumLength: 4
-                                        inputMethodHints: Qt.ImhDigitsOnly
-                                        placeholderText: fpsListModel.get(fpsComboBox.currentIndex).video_fps
-                                        validator: IntValidator{bottom:10; top:9999}
-                                        focus: true
+                                        TextField {
+                                            id: fpsField
+                                            maximumLength: 6
+                                            inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                            placeholderText: "144.0"
+                                            validator: refreshRateValidator
+                                            focus: true
+
+                                            IntValidator {
+                                                id: intValidator
+                                                bottom: 10
+                                                top: 500
+                                            }
+                                            
+                                            DoubleValidator {
+                                                id: refreshRateValidator
+                                                bottom: 10.0
+                                                top: 500.0
+                                                decimals: 2
+                                            }
 
                                         onTextChanged: {
+                                            // Automatically enable fractional refresh rate if there's a value
+                                            var hasValue = fpsField.text && fpsField.text.trim() !== ""
+                                            customFpsDialog.isRefreshRateMode = hasValue
+                                            StreamingPreferences.enableFractionalRefreshRate = hasValue
+                                            
                                             // standardButton() was added in Qt 5.10, so we must check for it first
                                             if (customFpsDialog.standardButton) {
                                                 customFpsDialog.standardButton(Dialog.Ok).enabled = customFpsDialog.isInputValid()
@@ -849,6 +914,101 @@ Flickable {
         }
 
         GroupBox {
+            id: artemisStreamingGroupBox
+            width: (parent.width - (parent.leftPadding + parent.rightPadding))
+            padding: 12
+            title: "<font color=\"skyblue\">" + qsTr("Artemis Streaming Enhancements") + "</font>"
+            font.pointSize: 12
+
+            Column {
+                anchors.fill: parent
+                spacing: 10
+
+                Label {
+                    width: parent.width
+                    text: qsTr("Client-side streaming enhancements")
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                Label {
+                    width: parent.width
+                    text: qsTr("These features require Apollo as the host streaming software.")
+                    font.pointSize: 9
+                    wrapMode: Text.Wrap
+                    color: "#888888"
+                }
+
+                // Virtual Display Control
+                CheckBox {
+                    id: virtualDisplayCheck
+                    width: parent.width
+                    hoverEnabled: true
+                    text: qsTr("Use Virtual Display")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.useVirtualDisplay
+                    onCheckedChanged: {
+                        StreamingPreferences.useVirtualDisplay = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Creates a virtual display on the Apollo server for streaming. Requires Apollo server - not available with Sunshine/GeForce Experience.")
+                }
+
+                // Resolution Scaling
+                CheckBox {
+                    id: resolutionScalingCheck
+                    width: parent.width
+                    hoverEnabled: true
+                    text: qsTr("Enable Resolution Scaling")
+                    font.pointSize: 12
+                    checked: StreamingPreferences.enableResolutionScaling
+                    onCheckedChanged: {
+                        StreamingPreferences.enableResolutionScaling = checked
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Scales the stream resolution. Useful for improving performance on lower-end devices or increasing quality on high-DPI displays.")
+                }
+
+                Row {
+                    spacing: 10
+                    visible: StreamingPreferences.enableResolutionScaling
+                    width: parent.width
+
+                    Label {
+                        text: qsTr("Scale Factor:")
+                        font.pointSize: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Slider {
+                        id: resolutionScaleSlider
+                        from: 50    // 50%
+                        to: 200     // 200%
+                        stepSize: 5
+                        value: StreamingPreferences.resolutionScaleFactor
+                        
+                        onValueChanged: {
+                            StreamingPreferences.resolutionScaleFactor = value
+                        }
+                    }
+
+                    Label {
+                        text: resolutionScaleSlider.value + "%"
+                        font.pointSize: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 40
+                    }
+                }
+            }
+        }
+
+        GroupBox {
 
             id: audioSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
@@ -926,7 +1086,7 @@ Flickable {
                 CheckBox {
                     id: muteOnFocusLossCheck
                     width: parent.width
-                    text: qsTr("Mute audio stream when Moonlight is not the active window")
+                    text: qsTr("Mute audio stream when Artemis is not the active window")
                     font.pointSize: 12
                     visible: SystemProperties.hasDesktopEnvironment
                     checked: StreamingPreferences.muteOnFocusLoss
@@ -937,7 +1097,7 @@ Flickable {
                     ToolTip.delay: 1000
                     ToolTip.timeout: 5000
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Mutes Moonlight's audio when you Alt+Tab out of the stream or click on a different window.")
+                    ToolTip.text: qsTr("Mutes Artemis's audio when you Alt+Tab out of the stream or click on a different window.")
                 }
             }
         }
@@ -1157,7 +1317,7 @@ Flickable {
                         if (StreamingPreferences.language !== new_language) {
                             StreamingPreferences.language = languageListModel.get(currentIndex).val
                             if (!StreamingPreferences.retranslate()) {
-                                ToolTip.show(qsTr("You must restart Moonlight for this change to take effect"), 5000)
+                                ToolTip.show(qsTr("You must restart Artemis for this change to take effect"), 5000)
                             }
                             else {
                                 // Force the back operation to pop any AppView pages that exist.
@@ -1286,6 +1446,7 @@ Flickable {
     Column {
         padding: 10
         rightPadding: 20
+        bottomPadding: 30
         anchors.left: settingsColumn1.right
         id: settingsColumn2
         width: settingsPage.width / 2
@@ -1337,7 +1498,7 @@ Flickable {
                         ToolTip.timeout: 10000
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("This enables the capture of system-wide keyboard shortcuts like Alt+Tab that would normally be handled by the client OS while streaming.") + "\n\n" +
-                                      qsTr("NOTE: Certain keyboard shortcuts like Ctrl+Alt+Del on Windows cannot be intercepted by any application, including Moonlight.")
+                                      qsTr("NOTE: Certain keyboard shortcuts like Ctrl+Alt+Del on Windows cannot be intercepted by any application, including Artemis.")
                     }
 
                     AutoResizingComboBox {
@@ -1498,7 +1659,7 @@ Flickable {
                 CheckBox {
                     id: backgroundGamepadCheck
                     width: parent.width
-                    text: qsTr("Process gamepad input when Moonlight is in the background")
+                    text: qsTr("Process gamepad input when Artemis is in the background")
                     font.pointSize: 12
                     visible: SystemProperties.hasDesktopEnvironment
                     checked: StreamingPreferences.backgroundGamepad
@@ -1509,7 +1670,7 @@ Flickable {
                     ToolTip.delay: 1000
                     ToolTip.timeout: 5000
                     ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Allows Moonlight to capture gamepad inputs even if it's not the current window in focus")
+                    ToolTip.text: qsTr("Allows Artemis to capture gamepad inputs even if it's not the current window in focus")
                 }
             }
         }
@@ -1532,6 +1693,7 @@ Flickable {
                     font.pointSize: 12
                     wrapMode: Text.Wrap
                 }
+
 
                 AutoResizingComboBox {
                     // ignore setting the index at first, and actually set it when the component is loaded
@@ -1627,6 +1789,50 @@ Flickable {
                         if (enabled) {
                             StreamingPreferences.videoCodecConfig = codecListModel.get(currentIndex).val
                         }
+                    }
+                }
+
+                // Preferred renderer backend
+                Label {
+                    width: parent.width
+                    text: qsTr("Preferred renderer")
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                    topPadding: 12
+                }
+
+                AutoResizingComboBox {
+                    function createModel() {
+                        var model = Qt.createQmlObject('import QtQuick 2.0; ListModel {}', parent, '')
+
+                        model.append({ text: qsTr("Auto (Vulkan, fallback to OpenGL)"), val: StreamingPreferences.RB_AUTO })
+                        model.append({ text: qsTr("Vulkan"), val: StreamingPreferences.RB_VULKAN })
+                        model.append({ text: qsTr("OpenGL"), val: StreamingPreferences.RB_OPENGL })
+                        return model
+                    }
+
+                    function reinitialize() {
+                        model = createModel()
+                        currentIndex = 0
+                        var saved = StreamingPreferences.rendererBackend
+                        for (var i = 0; i < model.count; i++) {
+                            if (model.get(i).val === saved) {
+                                currentIndex = i
+                                break
+                            }
+                        }
+                        activated(currentIndex)
+                    }
+
+                    Component.onCompleted: {
+                        reinitialize()
+                        languageChanged.connect(reinitialize)
+                    }
+
+                    id: rendererBackendComboBox
+                    textRole: "text"
+                    onActivated: {
+                        StreamingPreferences.rendererBackend = model.get(currentIndex).val
                     }
                 }
 
@@ -1750,6 +1956,34 @@ Flickable {
                     ToolTip.text: qsTr("Display real-time stream performance information while streaming.") + "\n\n" +
                                   qsTr("You can toggle it at any time while streaming using Ctrl+Alt+Shift+S or Select+L1+R1+X.") + "\n\n" +
                                   qsTr("The performance overlay is not supported on Steam Link or Raspberry Pi.")
+                }
+            }
+        }
+
+        GroupBox {
+            id: artemisSettingsGroupBox
+            width: (parent.width - (parent.leftPadding + parent.rightPadding))
+            padding: 12
+            title: "<font color=\"skyblue\">" + qsTr("Artemis Features") + "</font>"
+            font.pointSize: 12
+
+            Column {
+                anchors.fill: parent
+                spacing: 10
+
+                ClipboardSettings {
+                    id: clipboardSettings
+                    width: parent.width
+                }
+
+                // Note about Server Commands
+                Label {
+                    width: parent.width
+                    text: qsTr("Server Commands are available during streaming sessions via the game menu when connected to Apollo servers.")
+                    font.pointSize: 9
+                    wrapMode: Text.Wrap
+                    color: "#aaaaaa"
+                    topPadding: 10
                 }
             }
         }

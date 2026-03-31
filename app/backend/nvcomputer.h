@@ -113,7 +113,10 @@ public:
     QSslCertificate serverCert;
     QVector<NvApp> appList;
     bool isNvidiaServerSoftware;
+    QStringList serverCommands;
+    quint32 serverPermissions;
     // Remember to update isEqualSerialized() when adding fields here!
+    QString apolloVersion;
 
     // Synchronization
     mutable CopySafeReadWriteLock lock;

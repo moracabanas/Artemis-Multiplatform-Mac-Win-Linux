@@ -2,10 +2,10 @@ QT += core quick network quickcontrols2 svg
 CONFIG += c++11
 
 unix:!macx {
-    TARGET = moonlight
+    TARGET = artemis
 } else {
     # On macOS, this is the name displayed in the global menu bar
-    TARGET = Moonlight
+    TARGET = Artemis
 }
 
 include(../globaldefs.pri)
@@ -78,7 +78,7 @@ unix:if(!macx|disable-prebuilts) {
 
     !disable-ffmpeg {
         packagesExist(libavcodec) {
-            PKGCONFIG += libavcodec libavutil libswscale
+            PKGCONFIG += libavcodec libavutil libswscale libavformat
             CONFIG += ffmpeg
 
             !disable-libva {
@@ -211,6 +211,12 @@ SOURCES += \
     gui/sdlgamepadkeynavigation.cpp \
     streaming/video/overlaymanager.cpp \
     backend/systemproperties.cpp \
+    backend/clipboardmanager.cpp \
+    backend/servercommandmanager.cpp \
+    backend/serverpermissions.cpp \
+    backend/quickmenumanager.cpp \
+    backend/otppairingmanager.cpp \
+    settings/artemissettings.cpp \
     wm.cpp
 
 HEADERS += \
@@ -247,7 +253,13 @@ HEADERS += \
     settings/mappingmanager.h \
     gui/sdlgamepadkeynavigation.h \
     streaming/video/overlaymanager.h \
-    backend/systemproperties.h
+    backend/systemproperties.h \
+    backend/clipboardmanager.h \
+    backend/servercommandmanager.h \
+    backend/serverpermissions.h \
+    backend/quickmenumanager.h \
+    backend/otppairingmanager.h \
+    settings/artemissettings.h
 
 # Platform-specific renderers and decoders
 ffmpeg {
@@ -350,9 +362,11 @@ libplacebo {
     DEFINES += HAVE_LIBPLACEBO_VULKAN
     SOURCES += \
         streaming/video/ffmpeg-renderers/plvk.cpp \
-        streaming/video/ffmpeg-renderers/plvk_c.c
+        streaming/video/ffmpeg-renderers/plvk_c.c \
+        streaming/video/ffmpeg-renderers/pl_libav_shim.c
     HEADERS += \
-        streaming/video/ffmpeg-renderers/plvk.h
+        streaming/video/ffmpeg-renderers/plvk.h \
+        streaming/video/ffmpeg-renderers/pl_libav_shim.h
 }
 config_EGL {
     message(EGL renderer selected)
@@ -548,25 +562,25 @@ unix:!macx: {
 
     target.path = $$PREFIX/$$BINDIR/
 
-    desktop.files = deploy/linux/com.moonlight_stream.Moonlight.desktop
+    desktop.files = deploy/linux/com.artemis_desktop.Artemis.desktop
     desktop.path = $$PREFIX/$$DATADIR/applications/
 
-    icons.files = res/moonlight.svg
+    icons.files = res/artemis.svg
     icons.path = $$PREFIX/$$DATADIR/icons/hicolor/scalable/apps/
 
-    appstream.files = deploy/linux/com.moonlight_stream.Moonlight.appdata.xml
+    appstream.files = deploy/linux/com.artemis_desktop.Artemis.appdata.xml
     appstream.path = $$PREFIX/$$DATADIR/metainfo/
 
     INSTALLS += target desktop icons appstream
 }
 win32 {
-    RC_ICONS = moonlight.ico
-    QMAKE_TARGET_COMPANY = Moonlight Game Streaming Project
-    QMAKE_TARGET_DESCRIPTION = Moonlight Game Streaming Client
-    QMAKE_TARGET_PRODUCT = Moonlight
+    RC_ICONS = artemis.ico
+    QMAKE_TARGET_COMPANY = Artemis Desktop Project
+    QMAKE_TARGET_DESCRIPTION = Artemis Game Streaming Client
+    QMAKE_TARGET_PRODUCT = Artemis
 
     CONFIG -= embed_manifest_exe
-    QMAKE_LFLAGS += /MANIFEST:embed /MANIFESTINPUT:$${PWD}/Moonlight.exe.manifest
+    QMAKE_LFLAGS += /MANIFEST:embed /MANIFESTINPUT:$${PWD}/Artemis.exe.manifest
 }
 macx {
     # Create Info.plist in object dir with the correct version string
@@ -575,7 +589,7 @@ macx {
 
     QMAKE_INFO_PLIST = $$OUT_PWD/Info.plist
 
-    APP_BUNDLE_RESOURCES.files = moonlight.icns
+    APP_BUNDLE_RESOURCES.files = artemis.icns
     APP_BUNDLE_RESOURCES.path = Contents/Resources
 
     APP_BUNDLE_PLIST.files = $$OUT_PWD/Info.plist

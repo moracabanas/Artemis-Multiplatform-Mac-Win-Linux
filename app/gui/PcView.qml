@@ -46,14 +46,43 @@ CenteredGridView {
 
     function pairingComplete(error)
     {
-        // Close the PIN dialog
+        console.log("PcView.pairingComplete called with error:", error)
+        
+        // Close both PIN dialogs
         pairDialog.close()
+        otpProgressDialog.close()
 
         // Display a failed dialog if we got an error
         if (error !== undefined) {
+            console.log("PcView: Showing error dialog:", error)
             errorDialog.text = error
             errorDialog.helpText = ""
             errorDialog.open()
+        } else {
+            console.log("PcView: Pairing successful, attempting navigation")
+            
+            // Successful pairing - navigate to AppView like Android does
+            // Find the computer that was just paired (should now be paired)
+            // Use OTP dialog's computer index if available, otherwise find first paired computer
+            var targetIndex = otpPairDialog.computerIndex >= 0 ? otpPairDialog.computerIndex : -1
+            
+            console.log("PcView: Target index for navigation:", targetIndex)
+            
+            if (targetIndex >= 0) {
+                console.log("PcView: Creating AppView for computer index:", targetIndex)
+                
+                // Navigate to the AppView for the newly paired computer
+                var component = Qt.createComponent("AppView.qml")
+                var appView = component.createObject(stackView, {
+                    "computerIndex": targetIndex, 
+                    "objectName": computerModel.data(computerModel.index(targetIndex, 0), ComputerModel.NameRole) || "Computer"
+                })
+                stackView.push(appView)
+                
+                console.log("PcView: Navigation completed")
+            } else {
+                console.log("PcView: No valid target index, cannot navigate")
+            }
         }
     }
 
@@ -186,6 +215,28 @@ CenteredGridView {
                 }
                 NavigableMenuItem {
                     parentMenu: pcContextMenu
+                    text: qsTr("Pair")
+                    onTriggered: {
+                        // Use standard pairing for GeForce Experience
+                        var pin = computerModel.generatePinString()
+                        computerModel.pairComputer(index, pin)
+                        pairDialog.pin = pin
+                        pairDialog.open()
+                    }
+                    visible: model.online && !model.paired
+                }
+                NavigableMenuItem {
+                    parentMenu: pcContextMenu
+                    text: qsTr("Pair using OTP")
+                    onTriggered: {
+                        // Show OTP pairing dialog
+                        otpPairDialog.computerIndex = index
+                        otpPairDialog.open()
+                    }
+                    visible: model.online && !model.paired
+                }
+                NavigableMenuItem {
+                    parentMenu: pcContextMenu
                     text: qsTr("Test Network")
                     onTriggered: {
                         computerModel.testConnectionForComputer(index)
@@ -236,14 +287,21 @@ CenteredGridView {
                     stackView.push(appView)
                 }
                 else {
-                    var pin = computerModel.generatePinString()
+                    // If we know this is an Apollo server, use OTP. Otherwise, use PIN.
+                    if (model.apolloVersion) {
+                        otpPairDialog.computerIndex = index
+                        otpPairDialog.open()
+                    } else {
+                        // Default to standard PIN pairing on click
+                        var pin = computerModel.generatePinString()
 
-                    // Kick off pairing in the background
-                    computerModel.pairComputer(index, pin)
+                        // Kick off pairing in the background
+                        computerModel.pairComputer(index, pin)
 
-                    // Display the pairing dialog
-                    pairDialog.pin = pin
-                    pairDialog.open()
+                        // Display the pairing dialog
+                        pairDialog.pin = pin
+                        pairDialog.open()
+                    }
                 }
             } else if (!model.online) {
                 // Using open() here because it may be activated by keyboard
@@ -399,12 +457,182 @@ CenteredGridView {
         }
     }
 
-    NavigableMessageDialog {
+    NavigableDialog {
         id: showPcDetailsDialog
         property string pcDetails : "";
-        text: showPcDetailsDialog.pcDetails
-        imageSrc: "qrc:/res/baseline-help_outline-24px.svg"
+        title: qsTr("Computer Details")
         standardButtons: Dialog.Ok
+        
+        // Make the dialog larger
+        implicitWidth: 600
+        implicitHeight: 500
+        
+            ScrollView {
+            id: detailsScrollView
+            anchors.fill: parent
+            anchors.margins: 8  // Slightly larger margin for better appearance
+            clip: true
+            
+            ScrollBar.vertical.policy: ScrollBar.AsNeeded
+            ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+            
+            // Ensure scrollbars stay within bounds
+            ScrollBar.vertical.width: 12
+            ScrollBar.horizontal.height: 12
+            
+            TextArea {
+                id: detailsLabel
+                text: showPcDetailsDialog.pcDetails
+                wrapMode: Text.Wrap
+                selectByMouse: true
+                readOnly: true
+                font.family: "SF Pro Display, Segoe UI, system-ui, Arial"
+                font.pixelSize: 14  // Slightly larger for better readability
+                font.weight: Font.Normal
+                textFormat: Text.PlainText  // Use plain text to maintain transparent background
+                
+                // Use default text color for dark theme compatibility
+                // Enhanced padding for better spacing
+                padding: 20
+                
+                // Remove white border - use transparent background
+                background: Rectangle {
+                    color: "transparent"
+                    border.width: 0
+                }
+                
+                // Allow the text to expand naturally within the scroll area
+                width: Math.max(detailsScrollView.availableWidth, implicitWidth)
+                
+                Keys.onReturnPressed: {
+                    showPcDetailsDialog.accept()
+                }
+
+                Keys.onEnterPressed: {
+                    showPcDetailsDialog.accept()
+                }
+
+                Keys.onEscapePressed: {
+                    showPcDetailsDialog.reject()
+                }
+            }
+        }
+    }
+
+    NavigableDialog {
+        id: otpPairDialog
+        property int computerIndex: -1
+        property string computerName: computerIndex >= 0 ? (computerModel.data(computerModel.index(computerIndex, 0), ComputerModel.NameRole) || "") : ""
+        
+        title: qsTr("OTP Pairing")
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        
+        onOpened: {
+            // Clear previous values and focus on PIN field
+            pinField.text = ""
+            passphraseField.text = ""
+            pinField.forceActiveFocus()
+        }
+        
+        onAccepted: {
+            if (pinField.text.length === 4) {
+                // Start OTP pairing
+                computerModel.pairComputerWithOTP(computerIndex, pinField.text, passphraseField.text)
+                
+                // Show progress dialog
+                otpProgressDialog.open()
+            } else {
+                // Show error for invalid PIN
+                errorDialog.text = qsTr("PIN must be exactly 4 digits")
+                errorDialog.helpText = ""
+                errorDialog.open()
+            }
+        }
+        
+        ColumnLayout {
+            width: parent.width
+            spacing: 15
+            
+            Label {
+                text: qsTr("Pairing with Apollo Server: %1").arg(otpPairDialog.computerName)
+                font.bold: true
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
+            
+            Label {
+                text: qsTr("Apollo servers use OTP (One-Time Password) pairing for enhanced security.")
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
+            
+            ColumnLayout {
+                Layout.fillWidth: true
+                
+                Label {
+                    text: qsTr("PIN (4 digits):")
+                    font.bold: true
+                }
+                
+                TextField {
+                    id: pinField
+                    placeholderText: qsTr("Enter 4-digit PIN")
+                    Layout.fillWidth: true
+                    maximumLength: 4
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    
+                    Keys.onReturnPressed: {
+                        if (pinField.text.length === 4) {
+                            passphraseField.forceActiveFocus()
+                        }
+                    }
+                }
+            }
+            
+            ColumnLayout {
+                Layout.fillWidth: true
+                
+                Label {
+                    text: qsTr("Passphrase (optional):")
+                    font.bold: true
+                }
+                
+                TextField {
+                    id: passphraseField
+                    placeholderText: qsTr("Enter passphrase (leave blank for default)")
+                    Layout.fillWidth: true
+                    
+                    Keys.onReturnPressed: {
+                        if (pinField.text.length === 4) {
+                            otpPairDialog.accept()
+                        }
+                    }
+                }
+            }
+            
+            Label {
+                text: qsTr("Enter the PIN from your Apollo server's web interface. Apollo generates this PIN for you.")
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                color: "gray"
+                font.pointSize: 9
+            }
+        }
+    }
+    
+    NavigableMessageDialog {
+        id: otpProgressDialog
+        title: qsTr("OTP Pairing in Progress")
+        text: qsTr("Pairing with Apollo server...\n\nThis may take a few seconds.")
+        standardButtons: Dialog.NoButton
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        showSpinner: true
+        
+        // The dialog will be closed automatically when pairing completes
+        // via the pairingComplete() function
     }
 
     ScrollBar.vertical: ScrollBar {}

@@ -1,6 +1,8 @@
 #include <Limelight.h>
 #include "ffmpeg.h"
 #include "streaming/session.h"
+#include "backend/systemproperties.h"
+#include "settings/streamingpreferences.h"
 
 #include <h264_stream.h>
 
@@ -79,6 +81,11 @@ static const QMap<QString, int> k_NonHwaccelCodecInfo = {
     {"hevc_omx", 0},
 
     // AV1
+    {"av1_rkmpp", CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1},
+    {"av1_nvv4l2", CAPABILITY_REFERENCE_FRAME_INVALIDATION_AV1},
+    {"av1_nvmpi", 0},
+    {"av1_v4l2m2m", 0},
+    {"av1_omx", 0},
 };
 
 bool FFmpegVideoDecoder::isHardwareAccelerated()
@@ -94,7 +101,14 @@ bool FFmpegVideoDecoder::isAlwaysFullScreen()
 
 bool FFmpegVideoDecoder::isHdrSupported()
 {
-    return m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT;
+    bool hdrSupported = m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT;
+    
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "FFmpeg Decoder HDR Check: Renderer attributes=0x%x, HDR support=%s",
+                m_FrontendRenderer->getRendererAttributes(),
+                hdrSupported ? "YES" : "NO");
+    
+    return hdrSupported;
 }
 
 void FFmpegVideoDecoder::setHdrMode(bool enabled)
@@ -338,16 +352,57 @@ bool FFmpegVideoDecoder::initializeRendererInternal(IFFmpegRenderer* renderer, P
 
 bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params, bool useAlternateFrontend)
 {
+    // Read preferred renderer backend (Auto/Vulkan/OpenGL)
+    StreamingPreferences::RendererBackend preferredBackend = StreamingPreferences::RB_AUTO;
+    if (auto prefs = StreamingPreferences::get()) {
+        preferredBackend = prefs->rendererBackend;
+    }
+
     if (useAlternateFrontend) {
+        // Respect user's preferred frontend renderer first, then fall back to existing logic
+#if defined(HAVE_LIBPLACEBO_VULKAN)
+        if (preferredBackend == StreamingPreferences::RB_VULKAN &&
+            m_BackendRenderer->getRendererType() != IFFmpegRenderer::RendererType::Vulkan) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Renderer preference: Trying Vulkan (PlVkRenderer) as frontend first");
+            m_FrontendRenderer = new PlVkRenderer(false, m_BackendRenderer);
+            if (initializeRendererInternal(m_FrontendRenderer, params)) {
+                return true;
+            }
+            delete m_FrontendRenderer;
+            m_FrontendRenderer = nullptr;
+        }
+#endif
+#if defined(HAVE_EGL)
+        if (preferredBackend == StreamingPreferences::RB_OPENGL && m_BackendRenderer->canExportEGL()) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Renderer preference: Trying OpenGL (EGLRenderer) as frontend first");
+            m_FrontendRenderer = new EGLRenderer(m_BackendRenderer);
+            if (initializeRendererInternal(m_FrontendRenderer, params)) {
+                return true;
+            }
+            delete m_FrontendRenderer;
+            m_FrontendRenderer = nullptr;
+        }
+#endif
         if (params->videoFormat & VIDEO_FORMAT_MASK_10BIT) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "HDR Debug: Creating alternate frontend renderer for 10-bit content");
 #if defined(HAVE_LIBPLACEBO_VULKAN) && !defined(VULKAN_IS_SLOW)
             // The Vulkan renderer can also handle HDR with a supported compositor. We prefer
             // rendering HDR with Vulkan if possible since it's more fully featured than DRM.
             if (m_BackendRenderer->getRendererType() != IFFmpegRenderer::RendererType::Vulkan) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "HDR Debug: Trying PlVkRenderer for 10-bit content");
                 m_FrontendRenderer = new PlVkRenderer(false, m_BackendRenderer);
                 if (initializeRendererInternal(m_FrontendRenderer, params) && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT)) {
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                "HDR Debug: PlVkRenderer success - HDR support enabled");
                     return true;
                 }
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "HDR Debug: PlVkRenderer failed or no HDR support (attributes=0x%x)",
+                            m_FrontendRenderer ? m_FrontendRenderer->getRendererAttributes() : 0);
                 delete m_FrontendRenderer;
                 m_FrontendRenderer = nullptr;
             }
@@ -359,42 +414,44 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params, bool
             // not currently support this (and even if it did, Mesa and Wayland don't
             // currently have protocols to actually get that metadata to the display).
             if (m_BackendRenderer->canExportDrmPrime()) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "HDR Debug: Trying DrmRenderer for 10-bit content");
                 m_FrontendRenderer = new DrmRenderer(AV_HWDEVICE_TYPE_NONE, m_BackendRenderer);
                 if (initializeRendererInternal(m_FrontendRenderer, params) && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT)) {
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                "HDR Debug: DrmRenderer success - HDR support enabled");
                     return true;
                 }
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "HDR Debug: DrmRenderer failed or no HDR support (attributes=0x%x)",
+                            m_FrontendRenderer ? m_FrontendRenderer->getRendererAttributes() : 0);
                 delete m_FrontendRenderer;
                 m_FrontendRenderer = nullptr;
+            }
+            else {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "HDR Debug: Backend renderer cannot export DRM PRIME");
             }
 #endif
 
 #if defined(HAVE_LIBPLACEBO_VULKAN) && defined(VULKAN_IS_SLOW)
             if (m_BackendRenderer->getRendererType() != IFFmpegRenderer::RendererType::Vulkan) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "HDR Debug: Trying PlVkRenderer (VULKAN_IS_SLOW) for 10-bit content");
                 m_FrontendRenderer = new PlVkRenderer(false, m_BackendRenderer);
                 if (initializeRendererInternal(m_FrontendRenderer, params) && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_HDR_SUPPORT)) {
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                                "HDR Debug: PlVkRenderer (VULKAN_IS_SLOW) success - HDR support enabled");
                     return true;
                 }
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                            "HDR Debug: PlVkRenderer (VULKAN_IS_SLOW) failed or no HDR support (attributes=0x%x)",
+                            m_FrontendRenderer ? m_FrontendRenderer->getRendererAttributes() : 0);
                 delete m_FrontendRenderer;
                 m_FrontendRenderer = nullptr;
             }
 #endif
         }
-        else
-        {
-#ifdef HAVE_LIBPLACEBO_VULKAN
-            if (qgetenv("PREFER_VULKAN") == "1") {
-                if (m_BackendRenderer->getRendererType() != IFFmpegRenderer::RendererType::Vulkan) {
-                    m_FrontendRenderer = new PlVkRenderer(false, m_BackendRenderer);
-                    if (initializeRendererInternal(m_FrontendRenderer, params)) {
-                        return true;
-                    }
-                    delete m_FrontendRenderer;
-                    m_FrontendRenderer = nullptr;
-                }
-            }
-#endif
-        }
-
 #if defined(HAVE_EGL) && !defined(GL_IS_SLOW)
         if (m_BackendRenderer->canExportEGL()) {
             m_FrontendRenderer = new EGLRenderer(m_BackendRenderer);
@@ -417,6 +474,32 @@ bool FFmpegVideoDecoder::createFrontendRenderer(PDECODER_PARAMETERS params, bool
     else {
         // The backend renderer cannot directly render to the display, so
         // we will create an SDL or DRM renderer to draw the frames.
+
+        // Respect user's preferred frontend first where possible
+#if defined(HAVE_LIBPLACEBO_VULKAN)
+        if (preferredBackend == StreamingPreferences::RB_VULKAN) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Renderer preference: Trying Vulkan (PlVkRenderer) frontend");
+            m_FrontendRenderer = new PlVkRenderer(false, m_BackendRenderer);
+            if (initializeRendererInternal(m_FrontendRenderer, params)) {
+                return true;
+            }
+            delete m_FrontendRenderer;
+            m_FrontendRenderer = nullptr;
+        }
+#endif
+#if defined(HAVE_EGL)
+        if (preferredBackend == StreamingPreferences::RB_OPENGL && m_BackendRenderer->canExportEGL()) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Renderer preference: Trying OpenGL (EGLRenderer) frontend");
+            m_FrontendRenderer = new EGLRenderer(m_BackendRenderer);
+            if (initializeRendererInternal(m_FrontendRenderer, params)) {
+                return true;
+            }
+            delete m_FrontendRenderer;
+            m_FrontendRenderer = nullptr;
+        }
+#endif
 
 #if (defined(VULKAN_IS_SLOW) || defined(GL_IS_SLOW)) && defined(HAVE_DRM)
         // Try DrmRenderer first if we have a slow GPU

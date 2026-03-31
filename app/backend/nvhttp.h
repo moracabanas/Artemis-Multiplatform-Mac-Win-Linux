@@ -130,6 +130,11 @@ public:
                  QString tagName);
 
     static
+    QStringList
+    getXmlArray(QString xml,
+                QString tagName);
+
+    static
     QByteArray
     getXmlStringFromHex(QString xml,
                         QString tagName);
@@ -165,6 +170,7 @@ public:
     startApp(QString verb,
              bool isGfe,
              int appId,
+             QString appUuid,
              PSTREAM_CONFIGURATION streamConfig,
              bool sops,
              bool localAudio,
@@ -177,6 +183,15 @@ public:
 
     QImage
     getBoxArt(int appId);
+
+    // Artemis clipboard sync endpoints (Apollo servers only)
+    QString
+    getClipboardContent();
+
+    bool
+    sendClipboardContent(const QString& content);
+
+    // Server command methods are now handled through LiSendExecServerCmd in the moonlight-common-c library
 
     static
     QVector<NvDisplayMode>

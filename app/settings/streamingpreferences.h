@@ -60,6 +60,15 @@ public:
     };
     Q_ENUM(UIDisplayMode)
 
+    // Renderer backend preference
+    enum RendererBackend
+    {
+        RB_AUTO,
+        RB_VULKAN,
+        RB_OPENGL,
+    };
+    Q_ENUM(RendererBackend)
+
     // New entries must go at the end of the enum
     // to avoid renumbering existing entries (which
     // would affect existing user preferences).
@@ -144,7 +153,15 @@ public:
     Q_PROPERTY(bool swapFaceButtons MEMBER swapFaceButtons NOTIFY swapFaceButtonsChanged)
     Q_PROPERTY(bool keepAwake MEMBER keepAwake NOTIFY keepAwakeChanged)
     Q_PROPERTY(CaptureSysKeysMode captureSysKeysMode MEMBER captureSysKeysMode NOTIFY captureSysKeysModeChanged)
-    Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged);
+    Q_PROPERTY(Language language MEMBER language NOTIFY languageChanged)
+    Q_PROPERTY(RendererBackend rendererBackend MEMBER rendererBackend NOTIFY rendererBackendChanged)
+    
+    // Artemis client-side streaming enhancements
+    Q_PROPERTY(bool useVirtualDisplay MEMBER useVirtualDisplay NOTIFY useVirtualDisplayChanged)
+    Q_PROPERTY(bool enableFractionalRefreshRate MEMBER enableFractionalRefreshRate NOTIFY enableFractionalRefreshRateChanged)
+    Q_PROPERTY(double customRefreshRate MEMBER customRefreshRate NOTIFY customRefreshRateChanged)
+    Q_PROPERTY(bool enableResolutionScaling MEMBER enableResolutionScaling NOTIFY enableResolutionScalingChanged)
+    Q_PROPERTY(int resolutionScaleFactor MEMBER resolutionScaleFactor NOTIFY resolutionScaleFactorChanged);
 
     Q_INVOKABLE bool retranslate();
 
@@ -187,6 +204,14 @@ public:
     UIDisplayMode uiDisplayMode;
     Language language;
     CaptureSysKeysMode captureSysKeysMode;
+    RendererBackend rendererBackend;
+    
+    // Artemis client-side streaming enhancements
+    bool useVirtualDisplay;
+    bool enableFractionalRefreshRate;
+    double customRefreshRate;
+    bool enableResolutionScaling;
+    int resolutionScaleFactor;
 
 signals:
     void displayModeChanged();
@@ -224,6 +249,14 @@ signals:
     void captureSysKeysModeChanged();
     void keepAwakeChanged();
     void languageChanged();
+    void rendererBackendChanged();
+    
+    // Artemis client-side streaming enhancement signals
+    void useVirtualDisplayChanged();
+    void enableFractionalRefreshRateChanged();
+    void customRefreshRateChanged();
+    void enableResolutionScalingChanged();
+    void resolutionScaleFactorChanged();
 
 private:
     explicit StreamingPreferences(QQmlEngine *qmlEngine);
