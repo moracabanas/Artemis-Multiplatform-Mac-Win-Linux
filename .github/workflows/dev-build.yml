@@ -404,7 +404,7 @@ jobs:
         $env:PATH = "$env:Qt6_DIR\bin;$env:PATH"
         
         # Run our Artemis build script that handles everything
-        cmd /c "scripts\build-artemis-arch.bat release"
+        cmd /c "scripts\windows\build-artemis-arch.bat release"
         
         if ($LASTEXITCODE -ne 0) {
           echo "Build failed with exit code $LASTEXITCODE"
@@ -545,7 +545,7 @@ jobs:
         
         # Run the build script
         echo "Running build script for ARM64..."
-        cmd /c "scripts\build-artemis-arch.bat release"
+        cmd /c "scripts\windows\build-artemis-arch.bat release"
         
         $buildExitCode = $LASTEXITCODE
         echo "Build script completed with exit code: $buildExitCode"
@@ -669,7 +669,7 @@ jobs:
         SEMANTIC_VERSION: ${{ needs.setup-version.outputs.version }}
       run: |
         $env:PATH = "$env:Qt6_DIR\bin;$env:PATH"
-        cmd /c "scripts\build-artemis-arch.bat release"
+        cmd /c "scripts\windows\build-artemis-arch.bat release"
         
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         
@@ -691,7 +691,7 @@ jobs:
         $env:Qt6_DIR = $qtArm64Path
         $env:PATH = "$qtArm64Path\bin;$env:PATH"
         
-        cmd /c "scripts\build-artemis-arch.bat release"
+        cmd /c "scripts\windows\build-artemis-arch.bat release"
         
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         
@@ -744,7 +744,7 @@ jobs:
           echo "Trying fallback approach with generate-artemis-bundle.bat script..."
           
           # Fallback to original script approach with version override
-          cmd /c "scripts\generate-artemis-bundle.bat release $msbuildVersion"
+          cmd /c "scripts\windows\generate-artemis-bundle.bat release $msbuildVersion"
           
           if ($LASTEXITCODE -ne 0) {
             echo "Fallback also failed with exit code $LASTEXITCODE"
@@ -907,7 +907,7 @@ jobs:
         
         # Run DMG generation with error handling
         DMG_OUTPUT="Artemis-${VERSION}.dmg"
-        if ! ./scripts/generate-dmg.sh Release "$VERSION"; then
+        if ! ./scripts/macos/generate-dmg.sh Release "$VERSION"; then
           echo "DMG generation failed, checking for common issues..."
           
           # Check if create-dmg is available

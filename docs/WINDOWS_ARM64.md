@@ -63,7 +63,7 @@ To build ARM64 locally, you need:
 
 Build command:
 ```batch
-scripts\build-artemis-arch.bat release
+scripts\windows\build-artemis-arch.bat release
 ```
 
 The build script will automatically detect ARM64 Qt and configure appropriately.

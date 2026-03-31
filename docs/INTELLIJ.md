@@ -2,6 +2,8 @@
 
 This repo includes shared JetBrains run configurations in `.run/` for macOS development.
 
+These runners are macOS-only. They do not build Windows or Linux artifacts from a macOS host.
+
 ## Included runners
 
 - `Build macOS All`

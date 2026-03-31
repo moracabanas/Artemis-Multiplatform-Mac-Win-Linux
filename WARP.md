@@ -27,11 +27,12 @@ Commands and workflows
   - Notes
     - Prefer qmake6 (Qt 6). If only qmake is present, ensure it’s the Qt 6 variant.
     - Some older helper scripts reference moonlight-qt.pro; use artemis.pro for this repo.
+    - Host-platform packaging only: macOS builds macOS artifacts, Linux builds Linux artifacts, Windows builds Windows artifacts.
 
 - Build (Windows, from Dev Prompt)
   - qmake6 artemis.pro CONFIG+=release
   - nmake
-  - Packaging and multi-arch builds are scripted (see scripts/build-artemis-arch.bat and scripts/generate-artemis-bundle.bat).
+  - Packaging and multi-arch builds are scripted (see scripts/windows/build-artemis-arch.bat and scripts/windows/generate-artemis-bundle.bat).
 
 - Run the app
   - macOS: open app/Artemis.app
@@ -44,12 +45,12 @@ Commands and workflows
 
 - Packaging (platform-specific)
   - macOS (Universal DMG):
-    - ./scripts/generate-dmg.sh Release [VERSION]
+    - ./scripts/macos/generate-dmg.sh Release [VERSION]
   - Linux (AppImage):
-    - ./scripts/build-appimage.sh
+    - ./scripts/linux/build-appimage.sh
   - Windows
-    - Portable/arch-specific: scripts\build-artemis-arch.bat release
-    - Universal installer (bundle): scripts\generate-artemis-bundle.bat release [VERSION]
+    - Portable/arch-specific: scripts\windows\build-artemis-arch.bat release
+    - Universal installer (bundle): scripts\windows\generate-artemis-bundle.bat release [VERSION]
 
 - Single test / ad-hoc checks
   - There is no formal unit test harness configured. Use the included helper for OTP hashing parity:
@@ -94,4 +95,3 @@ Notes for agents
 - Use qmake6 for Qt 6. On macOS, the CI uses MACOSX_DEPLOYMENT_TARGET=14.0 during packaging; regular local builds typically don’t require setting this.
 - No linting configuration is present in-repo; don’t assume clang-tidy/clang-format.
 - For troubleshooting macOS MOC/QML build issues, the CI demonstrates a full clean + qmake_all sequence and per-subproject rebuilds in .github/workflows/dev-build.yml.
-
