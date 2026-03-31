@@ -1546,44 +1546,48 @@ jobs:
           - --socket=pulseaudio
           - --share=network
           - --filesystem=home
-          # GPU and hardware acceleration access (critical for Steam Deck and desktop)
+          # GPU and hardware acceleration access
           - --device=dri
-          # Enable access to host graphics drivers (Mesa, NVIDIA, etc.)
-          - --filesystem=host-os
-          - --filesystem=/usr/share/drirc.d:ro
-          # Allow access to VA-API and VDPAU hardware decode libraries
-          - --env=LIBVA_DRIVERS_PATH=/run/host/usr/lib/x86_64-linux-gnu/dri:/run/host/usr/lib/dri:/usr/lib/x86_64-linux-gnu/dri
-          - --env=VDPAU_DRIVER_PATH=/run/host/usr/lib/x86_64-linux-gnu/vdpau:/run/host/usr/lib/vdpau:/usr/lib/x86_64-linux-gnu/vdpau
+          # Keep system device info for diagnostics (read-only)
+          - --filesystem=/sys/dev/char:ro
+          - --filesystem=/sys/class/drm:ro
+          # Prefer runtime-provided VA-API drivers mounted via extensions
+          - --env=LIBVA_DRIVERS_PATH=/app/vaapi-intel/lib/dri:/app/vaapi-amd/lib/dri:/usr/lib/x86_64-linux-gnu/dri:/usr/lib/dri
+          # Auto-detect render node
+          - --env=GST_VAAPI_DRM_DEVICE=/dev/dri/renderD128
+          # Allow software fallback for Vulkan if hardware fails
+          - --env=PLVK_ALLOW_SOFTWARE=1
+          # Mesa/SDL optimizations
+          - --env=MESA_GLTHREAD=true
+          - --env=MESA_NO_ERROR=1
+          - --env=SDL_VIDEO_X11_FORCE_EGL=1
         add-extensions:
-          # Mount host GL/Vulkan drivers from the Freedesktop runtime
+          # GL (Mesa) driver extension that matches the runtime branch
           org.freedesktop.Platform.GL.default:
             version: '23.08'
             directory: gl-default
             subdirectories: true
-            no-autodownload: true
-            autodelete: false
+            no-autodownload: false
             add-ld-path: lib
+          # NVIDIA GL driver extension (auto-installs if applicable)
           org.freedesktop.Platform.GL.nvidia:
             version: '23.08'
             directory: gl-nvidia
             subdirectories: true
-            no-autodownload: true
-            autodelete: false
+            no-autodownload: false
             add-ld-path: lib
-          # Mount host VA-API drivers for hardware video decode
+          # VA-API drivers for hardware decode (Intel and AMD)
           org.freedesktop.Platform.VAAPI.Intel:
             version: '23.08'
             directory: vaapi-intel
             subdirectories: true
-            no-autodownload: true
-            autodelete: false
+            no-autodownload: false
             add-ld-path: lib
           org.freedesktop.Platform.VAAPI.AMD:
             version: '23.08'
             directory: vaapi-amd
             subdirectories: true
-            no-autodownload: true
-            autodelete: false
+            no-autodownload: false
             add-ld-path: lib
         modules:
           - name: opus
@@ -1603,6 +1607,30 @@ jobs:
               - type: archive
                 url: https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.20.2/SDL2_ttf-2.20.2.tar.gz
                 sha256: 9dc71ed93487521b107a2c4a9ca6bf43fb62f6bddd5c26b055e6b91418a22053
+          
+          # Build libva with proper compatibility
+          - name: libva
+            buildsystem: meson
+            config-opts:
+              - -Ddriverdir=/app/lib/dri
+              - -Dwith_x11=yes
+              - -Dwith_wayland=yes
+              - -Dwith_glx=yes
+            sources:
+              - type: archive
+                url: https://github.com/intel/libva/releases/download/2.22.0/libva-2.22.0.tar.bz2
+                sha256: e3da2250654c8d52b3f59f8cb3f3d8e7fb1a2ee64378dbc400fbc5663de7edb8
+          
+          # NVIDIA NVDEC/NVENC support (headers)
+          - name: nv-codec-headers
+            buildsystem: simple
+            build-commands:
+              - make -j$(nproc)
+              - make PREFIX=/app install
+            sources:
+              - type: git
+                url: https://github.com/FFmpeg/nv-codec-headers.git
+                branch: master
           
           # Build libplacebo from source for Vulkan/HDR support (critical for Steam Deck)
           - name: libplacebo
@@ -1676,20 +1704,44 @@ jobs:
                     branch: main
                     dest: third_party/spirv-tools/external/spirv-headers
           
+          # Custom FFmpeg with CUDA/NVDEC/NVENC, VAAPI, and VDPAU (shared libs in /app/lib)
+          - name: ffmpeg
+            buildsystem: simple
+            build-commands:
+              - export PKG_CONFIG_PATH=/app/lib/pkgconfig:${PKG_CONFIG_PATH}
+              - |
+                ./configure \
+                  --prefix=/app \
+                  --enable-shared --disable-static \
+                  --disable-debug \
+                  --enable-gpl --enable-nonfree \
+                  --enable-libdrm --enable-vaapi --enable-vdpau \
+                  --enable-cuda-llvm --enable-nvenc --enable-nvdec --enable-cuvid \
+                  --enable-vulkan --enable-libplacebo \
+                  --enable-openssl
+              - make -j$(nproc)
+              - make install
+            sources:
+              - type: git
+                url: https://github.com/FFmpeg/FFmpeg.git
+                branch: release/6.1
+          
           - name: artemis-desktop-dev
             buildsystem: simple
             build-commands:
               - install -d /app/lib/GL # Workaround for NVIDIA driver issue
-              # Create extension mount directories for hardware acceleration
-              - install -d /app/lib/gl-default
-              - install -d /app/lib/gl-nvidia
-              - install -d /app/lib/vaapi-intel
-              - install -d /app/lib/vaapi-amd
+              # Create extension mount directories for hardware acceleration at the correct paths
+              - install -d /app/gl-default
+              - install -d /app/gl-nvidia
+              - install -d /app/vaapi-intel
+              - install -d /app/vaapi-amd
               - rm -f .qmake.stash .qmake.cache
               - find . -name "Makefile*" -delete || true
               - rm -rf AntiHooking/ || true
               - rm -rf config.tests/SL/ || true
               - rm -f app/test_*.cpp || true
+              # Ensure our pkg-config entries (ffnvcodec, ffmpeg libs) are found first
+              - export PKG_CONFIG_PATH=/app/lib/pkgconfig:${PKG_CONFIG_PATH}
               - qmake6 artemis.pro CONFIG+=release "QMAKE_CXXFLAGS+=-fPIC"
               - make -j$(nproc)
               - install -Dm755 app/artemis /app/bin/artemis-dev
@@ -1717,13 +1769,14 @@ jobs:
                   install -Dm644 app/res/artemis.svg /app/share/icons/hicolor/scalable/apps/com.artemisdesktop.ArtemisDesktopDev.svg
                 fi
         EOF
-    
+
     - name: Build Flatpak
       env:
         VERSION: ${{ needs.setup-version.outputs.version }}
       run: |
         flatpak-builder --force-clean --repo=repo build-dir com.artemisdesktop.ArtemisDesktopDev.yml
-        flatpak build-bundle repo artemis-flatpak-$VERSION.flatpak com.artemisdesktop.ArtemisDesktopDev
+        # Build a bundle that embeds Flathub as the runtime repo so runtime + GPU extensions auto-install
+        flatpak build-bundle --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo repo artemis-flatpak-$VERSION.flatpak com.artemisdesktop.ArtemisDesktopDev
     
     - name: Upload Flatpak Development Artifacts
       uses: actions/upload-artifact@v4
