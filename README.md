@@ -231,6 +231,15 @@ make -j$(sysctl -n hw.ncpu)  # macOS
 nmake  # Windows
 ```
 
+### JetBrains / IntelliJ
+
+Shared JetBrains run configurations are checked into `.run/` for macOS development:
+
+- `Build macOS All`
+- `Run macOS Artemis`
+
+See [docs/INTELLIJ.md](docs/INTELLIJ.md) for prerequisites and paths.
+
 ## 🎮 Features Comparison
 
 | Feature | Moonlight Qt | Artemis Qt |
