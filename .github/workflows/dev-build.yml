@@ -390,7 +390,11 @@ jobs:
       uses: ilammy/msvc-dev-cmd@v1
     
     - name: Install 7z
-      run: choco install 7zip -y
+      run: |
+        choco install 7zip -y
+        refreshenv
+        # Verify 7z is available
+        where 7z || echo "7z not found in PATH after install"
     
     - name: Update version file for development build
       env:
@@ -404,11 +408,27 @@ jobs:
       env:
         SEMANTIC_VERSION: ${{ needs.setup-version.outputs.version }}
       run: |
-        # Add Qt to PATH for the build script
-        $env:PATH = "$env:Qt6_DIR\bin;$env:PATH"
+        # Add Qt and 7z to PATH for the build script
+        $env:PATH = "$env:Qt6_DIR\bin;C:\ProgramData\chocolatey\lib\7zip\tools;$env:PATH"
+        
+        # Verify tools are available
+        Write-Host "Qt6_DIR: $env:Qt6_DIR"
+        Write-Host "Checking for qmake..."
+        where qmake || where qmake6 || echo "qmake not found"
+        Write-Host "Checking for 7z..."
+        where 7z || echo "7z not found in PATH"
+        Write-Host "Current directory: $PWD"
+        Write-Host "Contents of build directory before build:"
+        Get-ChildItem -Path "build" -ErrorAction SilentlyContinue | Format-Table -AutoSize
         
         # Run our Artemis build script that handles everything
-        cmd /c "scripts\windows\build-artemis-arch.bat release"
+        cmd /c "scripts\windows\build-artemis-arch.bat release 2>&1"
+        
+        Write-Host "Build script exit code: $LASTEXITCODE"
+        
+        # Show what was created
+        Write-Host "Contents of build directory after build:"
+        Get-ChildItem -Path "build" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize
         
         if ($LASTEXITCODE -ne 0) {
           echo "Build failed with exit code $LASTEXITCODE"
@@ -419,6 +439,11 @@ jobs:
       env:
         SEMANTIC_VERSION: ${{ needs.setup-version.outputs.version }}
       run: |
+        # Debug: Show current directory and contents
+        Write-Host "Current directory: $PWD"
+        Write-Host "Contents of build directory:"
+        Get-ChildItem -Path "build" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName, Length | Format-Table -AutoSize
+        
         # Find the generated portable ZIP file
         $zipFile = Get-ChildItem -Path "build\installer-x64-release" -Filter "ArtemisPortable-*.zip" | Select-Object -First 1
         
@@ -428,8 +453,9 @@ jobs:
           Move-Item $zipFile.FullName $newZipName
           echo "Created x64 portable ZIP: $newZipName"
         } else {
-          echo "ERROR: Portable ZIP not found"
-          Get-ChildItem -Path "build\installer-x64-release" -Recurse
+          echo "ERROR: Portable ZIP not found in build\installer-x64-release"
+          echo "Showing all files in build directory:"
+          Get-ChildItem -Path "build" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName | Format-Table -AutoSize
           exit 1
         }
     
