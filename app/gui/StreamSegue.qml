@@ -1,6 +1,7 @@
 import QtQuick 2.0
 import QtQuick.Controls 2.2
 import QtQuick.Window 2.2
+import "ui" as Ui
 
 import SdlGamepadKeyNavigation 1.0
 import Session 1.0
@@ -33,9 +34,7 @@ Item {
     {
         // Hide the UI contents so the user doesn't
         // see them briefly when we pop off the StackView
-        stageSpinner.visible = false
-        stageLabel.visible = false
-        hintText.visible = false
+        stageCard.visible = false
 
         // Hide the window now that streaming has begun
         window.visible = false
@@ -182,34 +181,50 @@ Item {
         sourceComponent: Item {}
     }
 
-    Row {
+    Ui.UiCard {
+        id: stageCard
         anchors.centerIn: parent
-        spacing: 5
+        width: Math.min(parent.width - 48, 560)
+        implicitHeight: stageColumn.implicitHeight + 36
+        height: implicitHeight
+        tone: "raised"
+        cornerRadius: 8
 
-        BusyIndicator {
-            id: stageSpinner
-            running: false
+        Column {
+            id: stageColumn
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 16
+
+            Row {
+                spacing: 12
+
+                Item {
+                    width: 24
+                    height: 24
+
+                    BusyIndicator {
+                        id: stageSpinner
+                        anchors.fill: parent
+                        running: false
+                    }
+                }
+
+                Ui.UiSectionHeader {
+                    width: stageCard.width - 72
+                    eyebrow: isResume ? qsTr("RESUME") : qsTr("STREAM")
+                    title: stageText
+                    description: qsTr("Artemis is preparing the stream and will hand off to the fullscreen session automatically.")
+                }
+            }
+
+            Label {
+                id: hintText
+                width: parent.width
+                font.pointSize: 12
+                color: window ? window.mutedTextColor : "#a1a1aa"
+                wrapMode: Text.Wrap
+            }
         }
-
-        Label {
-            id: stageLabel
-            height: stageSpinner.height
-            text: stageText
-            font.pointSize: 20
-            verticalAlignment: Text.AlignVCenter
-
-            wrapMode: Text.Wrap
-        }
-    }
-
-    Label {
-        id: hintText
-        anchors.bottom: parent.bottom
-        anchors.bottomMargin: 50
-        anchors.horizontalCenter: parent.horizontalCenter
-        font.pointSize: 18
-        verticalAlignment: Text.AlignVCenter
-
-        wrapMode: Text.Wrap
     }
 }

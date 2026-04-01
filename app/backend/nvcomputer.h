@@ -115,6 +115,8 @@ public:
     bool isNvidiaServerSoftware;
     QStringList serverCommands;
     quint32 serverPermissions;
+    bool isApolloHost;
+    bool hasPermissionSystem;
     // Remember to update isEqualSerialized() when adding fields here!
     QString apolloVersion;
 

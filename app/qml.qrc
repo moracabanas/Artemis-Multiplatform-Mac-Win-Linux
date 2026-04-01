@@ -23,5 +23,17 @@
         <file>gui/ServerCommands.qml</file>
         <file>gui/QuickMenu.qml</file>
         <file>gui/Toast.qml</file>
+        <file>gui/ui/UiBadge.qml</file>
+        <file>gui/ui/UiButton.qml</file>
+        <file>gui/ui/UiCard.qml</file>
+        <file>gui/ui/UiEmptyState.qml</file>
+        <file>gui/ui/UiIcon.qml</file>
+        <file>gui/ui/UiIconButton.qml</file>
+        <file>gui/ui/UiInput.qml</file>
+        <file>gui/ui/UiNavButton.qml</file>
+        <file>gui/ui/UiSectionHeader.qml</file>
+        <file>gui/ui/UiSlider.qml</file>
+        <file>gui/ui/UiSpinBox.qml</file>
+        <file>gui/ui/UiToggle.qml</file>
     </qresource>
 </RCC>

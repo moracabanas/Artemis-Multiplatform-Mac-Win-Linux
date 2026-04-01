@@ -2,6 +2,7 @@
 
 #include "backend/boxartmanager.h"
 #include "backend/computermanager.h"
+#include "backend/serverpermissions.h"
 #include "streaming/session.h"
 
 #include <QAbstractListModel>
@@ -34,6 +35,14 @@ public:
     Q_INVOKABLE int getRunningAppId();
 
     Q_INVOKABLE QString getRunningAppName();
+
+    Q_INVOKABLE bool isApolloHost() const;
+
+    Q_INVOKABLE bool usesApolloPermissionSystem() const;
+
+    Q_INVOKABLE bool hasLaunchAppPermission() const;
+
+    Q_INVOKABLE QString launchPermissionErrorText() const;
 
     Q_INVOKABLE void quitRunningApp();
 

@@ -105,8 +105,7 @@ bool OTPPairingManager::isOTPSupported(NvComputer *computer) const
         return false;
     }
 
-    // OTP pairing is only available with Apollo/Sunshine servers (not Nvidia GeForce Experience)
-    return !computer->isNvidiaServerSoftware;
+    return computer->isApolloHost;
 }
 
 

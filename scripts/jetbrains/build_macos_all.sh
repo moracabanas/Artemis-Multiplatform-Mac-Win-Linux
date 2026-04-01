@@ -42,13 +42,19 @@ qmake6 "$ROOT_DIR/artemis.pro" \
 make -j"$THREADS" qmake_all
 make -j"$THREADS"
 
-APP_EXEC="$BUILD_DIR/app/Artemis.app/Contents/MacOS/Artemis"
+APP_BUNDLE="$BUILD_DIR/app/Artemis.app"
+APP_EXEC="$APP_BUNDLE/Contents/MacOS/Artemis"
 if [[ ! -x "$APP_EXEC" ]]; then
   echo "Build completed but the macOS app executable was not found at:"
   echo "  $APP_EXEC"
   exit 1
 fi
 
+if command -v codesign >/dev/null 2>&1; then
+  codesign --force --deep --sign - "$APP_BUNDLE"
+fi
+
 echo
 echo "Build complete."
+echo "App bundle:     $APP_BUNDLE"
 echo "App executable: $APP_EXEC"

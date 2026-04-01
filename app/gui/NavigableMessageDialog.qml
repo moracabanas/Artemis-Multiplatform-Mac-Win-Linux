@@ -1,9 +1,11 @@
 import QtQuick 2.0
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.2
+import "ui" as Ui
 
 NavigableDialog {
     id: dialog
+    width: Math.min(parent ? parent.width - 48 : implicitWidth, 560)
 
     property alias text: dialogLabel.dialogText
     property alias showSpinner: dialogSpinner.visible
@@ -18,24 +20,20 @@ NavigableDialog {
         dialogLabel.forceActiveFocus()
     }
 
-    RowLayout {
-        spacing: 10
+    contentItem: RowLayout {
+        spacing: 14
 
         BusyIndicator {
             id: dialogSpinner
             visible: false
         }
 
-        Image {
+        Ui.UiIcon {
             id: dialogImage
             source: (standardButtons & Dialog.Yes) ?
-                        "qrc:/res/baseline-help_outline-24px.svg" :
-                        "qrc:/res/baseline-error_outline-24px.svg"
-            sourceSize {
-                // The icon should be square so use the height as the width too
-                width: 50
-                height: 50
-            }
+                        "qrc:/res/lucide/circle-question-mark.svg" :
+                        "qrc:/res/lucide/circle-alert.svg"
+            iconSize: 22
             visible: !showSpinner
         }
 
@@ -44,8 +42,10 @@ NavigableDialog {
 
             id: dialogLabel
             text: dialogText + ((helpText && (standardButtons & Dialog.Help)) ? (helpTextSeparator + helpText) : "")
+            color: window ? window.textColor : "white"
             wrapMode: Text.Wrap
             elide: Label.ElideRight
+            lineHeight: 1.25
 
             // Cap the width so the dialog doesn't grow horizontally forever. This
             // will cause word wrap to kick in.
@@ -66,13 +66,8 @@ NavigableDialog {
         }
     }
 
-    footer: DialogButtonBox {
-        id: dialogButtonBox
-        standardButtons: dialog.standardButtons
-
-        onHelpRequested: {
-            Qt.openUrlExternally(helpUrl)
-            close()
-        }
+    onHelpRequested: {
+        Qt.openUrlExternally(helpUrl)
+        close()
     }
 }

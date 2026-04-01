@@ -2,6 +2,7 @@ import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.2
 import QtQuick.Window 2.2
+import "ui" as Ui
 
 import StreamingPreferences 1.0
 import ComputerManager 1.0
@@ -16,6 +17,65 @@ Flickable {
 
     signal languageChanged()
 
+    property color panelColor: window ? window.elevatedSurfaceColor : "#151518"
+    property color panelBorderColor: window ? window.borderColor : "#27272a"
+    property color panelAccentColor: window ? window.accentColor : "#fafafa"
+    property color panelInsetColor: window ? window.surfaceInsetColor : "#0d0d10"
+    property color panelMutedColor: window ? window.surfaceMutedColor : "#1c1c21"
+    property color mutedTextColor: window ? window.mutedTextColor : "#a1a1aa"
+    property int sliderBitrateCapKbps: 500000
+    property int maxCustomBitrateKbps: 10000000
+    property bool suppressBitrateSync: false
+
+    function defaultBitrateKbps() {
+        return StreamingPreferences.getDefaultBitrate(StreamingPreferences.width,
+                                                      StreamingPreferences.height,
+                                                      StreamingPreferences.fps,
+                                                      StreamingPreferences.enableYUV444)
+    }
+
+    function bitrateMbpsString(kbps) {
+        var mbps = Math.round((kbps / 1000.0) * 10) / 10
+        return (mbps % 1 === 0) ? String(mbps.toFixed(0)) : String(mbps.toFixed(1))
+    }
+
+    function parseBitrateMbps(text) {
+        var trimmed = text.trim()
+        if (trimmed === "" || !/^\d+(\.\d+)?$/.test(trimmed)) {
+            return -1
+        }
+
+        var kbps = Math.round(parseFloat(trimmed) * 1000)
+        if (isNaN(kbps) || kbps < 500 || kbps > maxCustomBitrateKbps) {
+            return -1
+        }
+
+        return kbps
+    }
+
+    function syncBitrateControls() {
+        if (!slider) {
+            return
+        }
+
+        var bitrate = Math.max(500, StreamingPreferences.bitrateKbps)
+        suppressBitrateSync = true
+        slider.value = Math.min(bitrate, slider.to)
+
+        if (bitrateInput) {
+            bitrateInput.text = bitrateMbpsString(bitrate)
+        }
+        suppressBitrateSync = false
+    }
+
+    function applyBitrateKbps(kbps, keepAutoAdjust) {
+        var normalized = Math.max(500, Math.round(kbps))
+        StreamingPreferences.bitrateKbps = normalized
+        StreamingPreferences.unlockBitrate = normalized > sliderBitrateCapKbps
+        StreamingPreferences.autoAdjustBitrate = keepAutoAdjust === true
+        syncBitrateControls()
+    }
+
     boundsBehavior: Flickable.OvershootBounds
 
     contentWidth: settingsColumn1.width > settingsColumn2.width ? settingsColumn1.width : settingsColumn2.width
@@ -26,6 +86,23 @@ Flickable {
             left: parent.right
             leftMargin: -10
         }
+
+        contentItem: Rectangle {
+            implicitWidth: 8
+            radius: 4
+            color: parent.pressed ? settingsPage.panelAccentColor : settingsPage.panelMutedColor
+        }
+
+        background: Rectangle {
+            implicitWidth: 8
+            radius: 4
+            color: settingsPage.panelInsetColor
+        }
+    }
+
+    Connections {
+        target: StreamingPreferences
+        function onBitrateChanged() { settingsPage.syncBitrateControls() }
     }
 
     function isChildOfFlickable(item) {
@@ -101,12 +178,72 @@ Flickable {
         width: settingsPage.width / 2
         spacing: 15
 
+        Ui.UiCard {
+            width: (parent.width - (parent.leftPadding + parent.rightPadding))
+            implicitHeight: profileSummaryColumn.implicitHeight + 36
+            height: implicitHeight
+            tone: "raised"
+            cornerRadius: 8
+
+            Column {
+                id: profileSummaryColumn
+                anchors.fill: parent
+                anchors.margins: 18
+                spacing: 10
+
+                Ui.UiSectionHeader {
+                    width: parent.width
+                    eyebrow: qsTr("PREFERENCES")
+                    title: qsTr("Streaming profile")
+                    description: qsTr("Tune quality, latency, and host behavior from one place. Artemis keeps the recommended bitrate in sync until you take manual control.")
+                }
+
+                Flow {
+                    width: parent.width
+                    spacing: 8
+
+                    Ui.UiBadge {
+                        id: profileResolutionLabel
+                        text: qsTr("%1x%2 @ %3 FPS").arg(StreamingPreferences.width).arg(StreamingPreferences.height).arg(StreamingPreferences.fps)
+                    }
+
+                    Ui.UiBadge {
+                        id: profileBitrateLabel
+                        text: qsTr("%1 Mbps").arg(settingsPage.bitrateMbpsString(StreamingPreferences.bitrateKbps))
+                    }
+
+                    Ui.UiBadge {
+                        id: profileMdnsLabel
+                        text: StreamingPreferences.enableMdns ? qsTr("LAN discovery on") : qsTr("LAN discovery off")
+                        tone: StreamingPreferences.enableMdns ? "strong" : "default"
+                    }
+                }
+            }
+        }
+
         GroupBox {
             id: basicSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Basic Settings") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Basic Settings")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: basicSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
@@ -284,11 +421,7 @@ Flickable {
                                 StreamingPreferences.height = selectedHeight
 
                                 if (StreamingPreferences.autoAdjustBitrate) {
-                                    StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(StreamingPreferences.width,
-                                                                                                              StreamingPreferences.height,
-                                                                                                              StreamingPreferences.fps,
-                                                                                                              StreamingPreferences.enableYUV444);
-                                    slider.value = StreamingPreferences.bitrateKbps
+                                    settingsPage.applyBitrateKbps(settingsPage.defaultBitrateKbps(), true)
                                 }
                             }
 
@@ -386,7 +519,7 @@ Flickable {
                                 }
 
                                 RowLayout {
-                                    TextField {
+                                    Ui.UiInput {
                                         id: widthField
                                         maximumLength: 5
                                         inputMethodHints: Qt.ImhDigitsOnly
@@ -415,7 +548,7 @@ Flickable {
                                         font.bold: true
                                     }
 
-                                    TextField {
+                                    Ui.UiInput {
                                         id: heightField
                                         maximumLength: 5
                                         inputMethodHints: Qt.ImhDigitsOnly
@@ -452,11 +585,7 @@ Flickable {
                                 StreamingPreferences.fps = selectedFps
 
                                 if (StreamingPreferences.autoAdjustBitrate) {
-                                    StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(StreamingPreferences.width,
-                                                                                                              StreamingPreferences.height,
-                                                                                                              StreamingPreferences.fps,
-                                                                                                              StreamingPreferences.enableYUV444);
-                                    slider.value = StreamingPreferences.bitrateKbps
+                                    settingsPage.applyBitrateKbps(settingsPage.defaultBitrateKbps(), true)
                                 }
                             }
 
@@ -576,7 +705,7 @@ Flickable {
                                 }
 
                                 RowLayout {
-                                        TextField {
+                                        Ui.UiInput {
                                             id: fpsField
                                             maximumLength: 6
                                             inputMethodHints: Qt.ImhFormattedNumbersOnly
@@ -734,7 +863,7 @@ Flickable {
                 Label {
                     width: parent.width
                     id: bitrateTitle
-                    text: qsTr("Video bitrate:")
+                    text: qsTr("Video bitrate")
                     font.pointSize: 12
                     wrapMode: Text.Wrap
                 }
@@ -742,51 +871,163 @@ Flickable {
                 Label {
                     width: parent.width
                     id: bitrateDesc
-                    text: qsTr("Lower the bitrate on slower connections. Raise the bitrate to increase image quality.")
+                    text: qsTr("Use the recommended bitrate for most setups. Drag the slider for normal tuning up to 500 Mbps, or enter a custom Mbps value for high-bandwidth LAN testing.")
                     font.pointSize: 9
                     wrapMode: Text.Wrap
                 }
 
-                Row {
+                Rectangle {
                     width: parent.width
-                    spacing: 5
+                    height: bitrateCardColumn.implicitHeight + 32
+                    radius: 6
+                    color: settingsPage.panelInsetColor
+                    border.width: 1
+                    border.color: settingsPage.panelBorderColor
 
-                    Slider {
-                        id: slider
+                    Column {
+                        id: bitrateCardColumn
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 12
 
-                        value: StreamingPreferences.bitrateKbps
+                        Row {
+                            width: parent.width
+                            spacing: 12
 
-                        stepSize: 500
-                        from : 500
-                        to: StreamingPreferences.unlockBitrate ? 500000 : 150000
+                            Column {
+                                width: parent.width - recommendedBitrateButton.width - parent.spacing
+                                spacing: 2
 
-                        snapMode: "SnapOnRelease"
-                        width: Math.min(bitrateDesc.implicitWidth, parent.width - (resetBitrateButton.visible ? resetBitrateButton.width + parent.spacing : 0))
+                                Label {
+                                    width: parent.width
+                                    text: qsTr("%1 Mbps").arg(settingsPage.bitrateMbpsString(StreamingPreferences.bitrateKbps))
+                                    color: window ? window.textColor : "white"
+                                    font.pointSize: 20
+                                    font.bold: true
+                                    wrapMode: Text.Wrap
+                                }
 
-                        onValueChanged: {
-                            bitrateTitle.text = qsTr("Video bitrate: %1 Mbps").arg(value / 1000.0)
-                            StreamingPreferences.bitrateKbps = value
+                                Label {
+                                    width: parent.width
+                                    text: StreamingPreferences.autoAdjustBitrate
+                                          ? qsTr("Recommended bitrate based on your current resolution, FPS, and color mode.")
+                                          : (StreamingPreferences.bitrateKbps > settingsPage.sliderBitrateCapKbps
+                                             ? qsTr("Custom bitrate override for advanced local-network testing.")
+                                             : qsTr("Manual bitrate override tuned from the standard range."))
+                                    color: settingsPage.mutedTextColor
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+
+                            Ui.UiButton {
+                                id: recommendedBitrateButton
+                                text: qsTr("Use recommended")
+                                visible: StreamingPreferences.bitrateKbps !== settingsPage.defaultBitrateKbps() || !StreamingPreferences.autoAdjustBitrate
+                                onClicked: {
+                                    settingsPage.applyBitrateKbps(settingsPage.defaultBitrateKbps(), true)
+                                }
+                            }
                         }
 
-                        onMoved: {
-                            StreamingPreferences.autoAdjustBitrate = false
+                        Ui.UiSlider {
+                            id: slider
+                            width: parent.width
+                            value: Math.min(StreamingPreferences.bitrateKbps, to)
+                            stepSize: 500
+                            from: 500
+                            to: settingsPage.sliderBitrateCapKbps
+                            snapMode: Slider.SnapOnRelease
+
+                            onMoved: {
+                                if (!settingsPage.suppressBitrateSync) {
+                                    settingsPage.applyBitrateKbps(value, false)
+                                }
+                            }
+
+                            Component.onCompleted: {
+                                settingsPage.syncBitrateControls()
+                                languageChanged.connect(settingsPage.syncBitrateControls)
+                            }
                         }
 
-                        Component.onCompleted: {
-                            // Refresh the text after translations change
-                            languageChanged.connect(valueChanged)
-                        }
-                    }
+                        Row {
+                            width: parent.width
+                            spacing: 10
 
-                    Button {
-                        id: resetBitrateButton
-                        text: qsTr("Use Default (%1 Mbps)").arg(StreamingPreferences.getDefaultBitrate(StreamingPreferences.width, StreamingPreferences.height, StreamingPreferences.fps, StreamingPreferences.enableYUV444) / 1000.0)
-                        visible: StreamingPreferences.bitrateKbps !== StreamingPreferences.getDefaultBitrate(StreamingPreferences.width, StreamingPreferences.height, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
-                        onClicked: {
-                            var defaultBitrate = StreamingPreferences.getDefaultBitrate(StreamingPreferences.width, StreamingPreferences.height, StreamingPreferences.fps, StreamingPreferences.enableYUV444)
-                            StreamingPreferences.bitrateKbps = defaultBitrate
-                            StreamingPreferences.autoAdjustBitrate = true
-                            slider.value = defaultBitrate
+                            Label {
+                                id: lowBitrateLegend
+                                text: qsTr("0.5 Mbps")
+                                color: settingsPage.mutedTextColor
+                                font.pointSize: 9
+                            }
+
+                            Item {
+                                width: Math.max(0, parent.width - lowBitrateLegend.implicitWidth - maxBitrateLabel.implicitWidth - 20)
+                                height: 1
+                            }
+
+                            Label {
+                                id: maxBitrateLabel
+                                text: qsTr("500 Mbps")
+                                color: settingsPage.mutedTextColor
+                                font.pointSize: 9
+                            }
+                        }
+
+                        Column {
+                            id: customBitrateRow
+                            width: parent.width
+                            spacing: 6
+
+                            Row {
+                                width: parent.width
+                                spacing: 8
+
+                                Label {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("Custom Mbps")
+                                    color: "white"
+                                }
+
+                                Ui.UiInput {
+                                    id: bitrateInput
+                                    width: 110
+                                    selectByMouse: true
+                                    inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                    placeholderText: qsTr("650")
+                                    validator: DoubleValidator {
+                                        bottom: 0.5
+                                        top: settingsPage.maxCustomBitrateKbps / 1000.0
+                                        decimals: 1
+                                    }
+
+                                    onAccepted: {
+                                        var enteredBitrate = settingsPage.parseBitrateMbps(text)
+                                        if (enteredBitrate >= 0) {
+                                            settingsPage.applyBitrateKbps(enteredBitrate, false)
+                                        }
+                                    }
+                                }
+
+                                Ui.UiButton {
+                                    id: customBitrateApplyButton
+                                    text: qsTr("Apply")
+                                    onClicked: {
+                                        var customBitrate = settingsPage.parseBitrateMbps(bitrateInput.text)
+                                        if (customBitrate >= 0) {
+                                            settingsPage.applyBitrateKbps(customBitrate, false)
+                                        }
+                                    }
+                                }
+                            }
+
+                            Label {
+                                width: parent.width
+                                text: qsTr("Enter values above 500 for custom LAN testing. Very high bitrates only make sense on fast wired networks.")
+                                color: settingsPage.mutedTextColor
+                                wrapMode: Text.Wrap
+                                font.pointSize: 9
+                            }
                         }
                     }
                 }
@@ -877,7 +1118,7 @@ Flickable {
                     ToolTip.text: qsTr("Fullscreen generally provides the best performance, but borderless windowed may work better with features like macOS Spaces, Alt+Tab, screenshot tools, on-screen overlays, etc.")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: vsyncCheck
                     width: parent.width
                     hoverEnabled: true
@@ -894,7 +1135,7 @@ Flickable {
                     ToolTip.text: qsTr("Disabling V-Sync allows sub-frame rendering latency, but it can display visible tearing")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: framePacingCheck
                     width: parent.width
                     hoverEnabled: true
@@ -916,9 +1157,26 @@ Flickable {
         GroupBox {
             id: artemisStreamingGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Artemis Streaming Enhancements") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Artemis Streaming Enhancements")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: artemisStreamingGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
@@ -940,7 +1198,7 @@ Flickable {
                 }
 
                 // Virtual Display Control
-                CheckBox {
+                Ui.UiToggle {
                     id: virtualDisplayCheck
                     width: parent.width
                     hoverEnabled: true
@@ -958,7 +1216,7 @@ Flickable {
                 }
 
                 // Resolution Scaling
-                CheckBox {
+                Ui.UiToggle {
                     id: resolutionScalingCheck
                     width: parent.width
                     hoverEnabled: true
@@ -986,7 +1244,7 @@ Flickable {
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
-                    Slider {
+                    Ui.UiSlider {
                         id: resolutionScaleSlider
                         from: 50    // 50%
                         to: 200     // 200%
@@ -1012,9 +1270,26 @@ Flickable {
 
             id: audioSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Audio Settings") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Audio Settings")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: audioSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
@@ -1067,7 +1342,7 @@ Flickable {
                 }
 
 
-                CheckBox {
+                Ui.UiToggle {
                     id: audioPcCheck
                     width: parent.width
                     text: qsTr("Mute host PC speakers while streaming")
@@ -1083,7 +1358,7 @@ Flickable {
                     ToolTip.text: qsTr("You must restart any game currently in progress for this setting to take effect")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: muteOnFocusLossCheck
                     width: parent.width
                     text: qsTr("Mute audio stream when Artemis is not the active window")
@@ -1105,15 +1380,32 @@ Flickable {
         GroupBox {
             id: hostSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Host Settings") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Host Settings")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: hostSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
                 spacing: 5
 
-                CheckBox {
+                Ui.UiToggle {
                     id: optimizeGameSettingsCheck
                     width: parent.width
                     text: qsTr("Optimize game settings for streaming")
@@ -1124,7 +1416,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: quitAppAfter
                     width: parent.width
                     text: qsTr("Quit app on host PC after ending stream")
@@ -1145,9 +1437,26 @@ Flickable {
         GroupBox {
             id: uiSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("UI Settings") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("UI Settings")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: uiSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
@@ -1385,7 +1694,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: connectionWarningsCheck
                     width: parent.width
                     text: qsTr("Show connection quality warnings")
@@ -1396,7 +1705,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: configurationWarningsCheck
                     width: parent.width
                     text: qsTr("Show configuration warnings")
@@ -1407,7 +1716,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     visible: SystemProperties.hasDiscordIntegration
                     id: discordPresenceCheck
                     width: parent.width
@@ -1424,7 +1733,7 @@ Flickable {
                     ToolTip.text: qsTr("Updates your Discord status to display the name of the game you're streaming.")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: keepAwakeCheck
                     width: parent.width
                     text: qsTr("Keep the display awake while streaming")
@@ -1455,15 +1764,32 @@ Flickable {
         GroupBox {
             id: inputSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Input Settings") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Input Settings")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: inputSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
                 spacing: 5
 
-                CheckBox {
+                Ui.UiToggle {
                     id: absoluteMouseCheck
                     hoverEnabled: true
                     width: parent.width
@@ -1486,7 +1812,7 @@ Flickable {
                     spacing: 5
                     width: parent.width
 
-                    CheckBox {
+                    Ui.UiToggle {
                         id: captureSysKeysCheck
                         hoverEnabled: true
                         text: qsTr("Capture system keyboard shortcuts")
@@ -1557,7 +1883,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: absoluteTouchCheck
                     hoverEnabled: true
                     width: parent.width
@@ -1574,7 +1900,7 @@ Flickable {
                     ToolTip.text: qsTr("When checked, the touchscreen acts like a trackpad. When unchecked, the touchscreen will directly control the mouse pointer.")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: swapMouseButtonsCheck
                     hoverEnabled: true
                     width: parent.width
@@ -1586,7 +1912,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: reverseScrollButtonsCheck
                     hoverEnabled: true
                     width: parent.width
@@ -1603,15 +1929,32 @@ Flickable {
         GroupBox {
             id: gamepadSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Gamepad Settings") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Gamepad Settings")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: gamepadSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
                 spacing: 5
 
-                CheckBox {
+                Ui.UiToggle {
                     id: swapFaceButtonsCheck
                     width: parent.width
                     text: qsTr("Swap A/B and X/Y gamepad buttons")
@@ -1627,7 +1970,7 @@ Flickable {
                     ToolTip.text: qsTr("This switches gamepads into a Nintendo-style button layout")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: singleControllerCheck
                     width: parent.width
                     text: qsTr("Force gamepad #1 always connected")
@@ -1644,7 +1987,7 @@ Flickable {
                                   qsTr("Only enable this option when streaming a game that doesn't support gamepads being connected after startup.")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: gamepadMouseCheck
                     hoverEnabled: true
                     width: parent.width
@@ -1656,7 +1999,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: backgroundGamepadCheck
                     width: parent.width
                     text: qsTr("Process gamepad input when Artemis is in the background")
@@ -1678,9 +2021,26 @@ Flickable {
         GroupBox {
             id: advancedSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Advanced Settings") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Advanced Settings")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: advancedSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
@@ -1836,7 +2196,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: enableHdr
                     width: parent.width
                     text: qsTr("Enable HDR (Experimental)")
@@ -1859,7 +2219,7 @@ Flickable {
                                       qsTr("HDR streaming is not supported on this PC.")
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: enableYUV444
                     width: parent.width
                     text: qsTr("Enable YUV 4:4:4 (Experimental)")
@@ -1868,16 +2228,12 @@ Flickable {
                     checked: StreamingPreferences.enableYUV444
                     onCheckedChanged: {
                         // This is called on init, so only reset to default bitrate when checked state changes.
-                        if (StreamingPreferences.enableYUV444 != checked) {
-                            StreamingPreferences.enableYUV444 = checked
-                            if (StreamingPreferences.autoAdjustBitrate) {
-                                StreamingPreferences.bitrateKbps = StreamingPreferences.getDefaultBitrate(StreamingPreferences.width,
-                                                                                                          StreamingPreferences.height,
-                                                                                                          StreamingPreferences.fps,
-                                                                                                          StreamingPreferences.enableYUV444);
-                                slider.value = StreamingPreferences.bitrateKbps
+                            if (StreamingPreferences.enableYUV444 != checked) {
+                                StreamingPreferences.enableYUV444 = checked
+                                if (StreamingPreferences.autoAdjustBitrate) {
+                                    settingsPage.applyBitrateKbps(settingsPage.defaultBitrateKbps(), true)
+                                }
                             }
-                        }
                     }
 
                     ToolTip.delay: 1000
@@ -1889,26 +2245,7 @@ Flickable {
                                       qsTr("YUV 4:4:4 is not supported on this PC.")
                 }
 
-                CheckBox {
-                    id: unlockBitrate
-                    width: parent.width
-                    text: qsTr("Unlock bitrate limit (Experimental)")
-                    font.pointSize: 12
-
-                    checked: StreamingPreferences.unlockBitrate
-                    onCheckedChanged: {
-                        StreamingPreferences.unlockBitrate = checked
-                        StreamingPreferences.bitrateKbps = Math.min(StreamingPreferences.bitrateKbps, slider.to)
-                        slider.value = StreamingPreferences.bitrateKbps
-                    }
-
-                    ToolTip.delay: 1000
-                    ToolTip.timeout: 5000
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("This unlocks extremely high video bitrates for use with Sunshine hosts. It should only be used when streaming over an Ethernet LAN connection.")
-                }
-
-                CheckBox {
+                Ui.UiToggle {
                     id: enableMdns
                     width: parent.width
                     text: qsTr("Automatically find PCs on the local network (Recommended)")
@@ -1929,7 +2266,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: detectNetworkBlocking
                     width: parent.width
                     text: qsTr("Automatically detect blocked connections (Recommended)")
@@ -1940,7 +2277,7 @@ Flickable {
                     }
                 }
 
-                CheckBox {
+                Ui.UiToggle {
                     id: showPerformanceOverlay
                     width: parent.width
                     text: qsTr("Show performance stats while streaming")
@@ -1963,9 +2300,26 @@ Flickable {
         GroupBox {
             id: artemisSettingsGroupBox
             width: (parent.width - (parent.leftPadding + parent.rightPadding))
-            padding: 12
-            title: "<font color=\"skyblue\">" + qsTr("Artemis Features") + "</font>"
+            padding: 18
+            topPadding: 52
+            title: qsTr("Artemis Features")
             font.pointSize: 12
+
+            background: Rectangle {
+                radius: 8
+                color: settingsPage.panelColor
+                border.width: 1
+                border.color: settingsPage.panelBorderColor
+            }
+
+            label: Label {
+                x: 18
+                y: 16
+                text: artemisSettingsGroupBox.title
+                color: window ? window.textColor : "#fafafa"
+                font.pointSize: 13
+                font.bold: true
+            }
 
             Column {
                 anchors.fill: parent
@@ -1976,14 +2330,17 @@ Flickable {
                     width: parent.width
                 }
 
-                // Note about Server Commands
+                ServerCommands {
+                    id: serverCommands
+                    width: parent.width
+                }
+
                 Label {
                     width: parent.width
-                    text: qsTr("Server Commands are available during streaming sessions via the game menu when connected to Apollo servers.")
+                    text: qsTr("Clipboard sync and server command controls only become active when the selected Apollo host exposes those permissions.")
                     font.pointSize: 9
                     wrapMode: Text.Wrap
-                    color: "#aaaaaa"
-                    topPadding: 10
+                    color: settingsPage.mutedTextColor
                 }
             }
         }

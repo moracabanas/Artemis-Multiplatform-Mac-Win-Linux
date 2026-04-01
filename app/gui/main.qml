@@ -2,16 +2,32 @@ import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
 import QtQuick.Window 2.2
-import QtQuick.Controls.Material 2.2
 
 import ComputerManager 1.0
 import AutoUpdateChecker 1.0
 import StreamingPreferences 1.0
 import SystemProperties 1.0
 import SdlGamepadKeyNavigation 1.0
+import "ui" as Ui
 
 ApplicationWindow {
     property bool pollingActive: false
+    property color backgroundColor: "#050505"
+    property color backgroundSecondaryColor: "#0a0a0c"
+    property color surfaceColor: "#111113"
+    property color elevatedSurfaceColor: "#151518"
+    property color surfaceMutedColor: "#1c1c21"
+    property color surfaceInsetColor: "#0d0d10"
+    property color borderColor: "#27272a"
+    property color borderStrongColor: "#3f3f46"
+    property color accentColor: "#fafafa"
+    property color textColor: "#fafafa"
+    property color mutedTextColor: "#a1a1aa"
+    property color subtleTextColor: "#71717a"
+    property color successColor: "#fafafa"
+    property color warningColor: "#d4d4d8"
+    property color dangerColor: "#a1a1aa"
+    property string uiFontFamily: geistRegular.status === FontLoader.Ready ? geistRegular.name : "SF Pro Display, Segoe UI, Arial"
 
     // Set by SettingsView to force the back operation to pop all
     // pages except the initial view. This is required when doing
@@ -21,16 +37,30 @@ ApplicationWindow {
     id: window
     width: 1280
     height: 600
+    color: backgroundColor
+    font.family: uiFontFamily
+
+    FontLoader {
+        id: geistRegular
+        source: "qrc:/fonts/Geist-Regular.ttf"
+    }
+
+    FontLoader {
+        id: geistMedium
+        source: "qrc:/fonts/Geist-Medium.ttf"
+    }
+
+    FontLoader {
+        id: geistSemiBold
+        source: "qrc:/fonts/Geist-SemiBold.ttf"
+    }
+
+    background: Rectangle {
+        color: window.backgroundColor
+    }
 
     // This function runs prior to creation of the initial StackView item
     function doEarlyInit() {
-        // Override the background color to Material 2 colors for Qt 6.5+
-        // in order to improve contrast between GFE's placeholder box art
-        // and the background of the app grid.
-        if (SystemProperties.usesMaterial3Theme) {
-            Material.background = "#303030"
-        }
-
         SdlGamepadKeyNavigation.enable()
     }
 
@@ -48,6 +78,17 @@ ApplicationWindow {
             }
         } else {
             window.showFullScreen()
+        }
+
+        window.raise()
+        window.requestActivate()
+
+        // On some desktop startup paths, the initial visible/active transitions
+        // don't reliably kick polling off before PcView renders. Start polling
+        // explicitly once so LAN discovery is running from first launch.
+        if (!pollingActive) {
+            ComputerManager.startPolling()
+            pollingActive = true
         }
 
         // Display any modal dialogs for configuration warnings
@@ -95,55 +136,6 @@ ApplicationWindow {
         }
         else {
             stackView.pop()
-        }
-    }
-
-    StackView {
-        id: stackView
-        anchors.fill: parent
-        focus: true
-
-        Component.onCompleted: {
-            // Perform our early initialization before constructing
-            // the initial view and pushing it to the StackView
-            doEarlyInit()
-            push(initialView)
-        }
-
-        onCurrentItemChanged: {
-            // Ensure focus travels to the next view when going back
-            if (currentItem) {
-                currentItem.forceActiveFocus()
-            }
-        }
-
-        Keys.onEscapePressed: {
-            if (depth > 1) {
-                goBack()
-            }
-            else {
-                quitConfirmationDialog.open()
-            }
-        }
-
-        Keys.onBackPressed: {
-            if (depth > 1) {
-                goBack()
-            }
-            else {
-                quitConfirmationDialog.open()
-            }
-        }
-
-        Keys.onMenuPressed: {
-            settingsButton.clicked()
-        }
-
-        // This is a keypress we've reserved for letting the
-        // SdlGamepadKeyNavigation object tell us to show settings
-        // when Menu is consumed by a focused control.
-        Keys.onHangupPressed: {
-            settingsButton.clicked()
         }
     }
 
@@ -226,223 +218,340 @@ ApplicationWindow {
         })
 
         if (existingItem !== null) {
-            // Pop to the existing item
             stackView.pop(existingItem)
         }
         else {
-            // Create a new item
             stackView.push(url)
         }
     }
 
-    header: ToolBar {
-        id: toolBar
-        height: 60
-        anchors.topMargin: 5
-        anchors.bottomMargin: 5
+    function currentItemIs(typeName) {
+        return stackView.currentItem && qmltypeof(stackView.currentItem, typeName)
+    }
 
-        Label {
-            id: titleLabel
-            visible: toolBar.width > 700
-            anchors.fill: parent
-            text: stackView.currentItem.objectName
-            font.pointSize: 20
-            elide: Label.ElideRight
-            horizontalAlignment: Qt.AlignHCenter
-            verticalAlignment: Qt.AlignVCenter
+    function showSettings() {
+        if (currentItemIs("SettingsView")) {
+            return
         }
 
+        stackView.push("qrc:/gui/SettingsView.qml")
+    }
+
+    function showComputers() {
+        if (stackView.depth > 1) {
+            stackView.pop(null)
+        }
+    }
+
+    function currentPageTitle() {
+        if (!stackView.currentItem) {
+            return qsTr("Artemis")
+        }
+
+        if (currentItemIs("SettingsView")) {
+            return qsTr("Settings")
+        }
+
+        return stackView.currentItem.objectName
+    }
+
+    function currentPageDescription() {
+        if (currentItemIs("PcView")) {
+            return qsTr("Manage hosts, pairing, local discovery, and session entry points.")
+        }
+        if (currentItemIs("SettingsView")) {
+            return qsTr("Streaming, input, bitrate, Apollo integration, and client behavior.")
+        }
+        if (currentItemIs("AppView")) {
+            return qsTr("Browse exported apps and launch a stream from the selected host.")
+        }
+        if (currentItemIs("StreamSegue") || currentItemIs("QuitSegue")) {
+            return qsTr("Preparing or closing the active streaming session.")
+        }
+
+        return qsTr("Desktop streaming client")
+    }
+
+    Item {
+        id: toolBar
+        visible: true
+    }
+
+    Item {
+        id: shell
+        anchors.fill: parent
+        anchors.margins: 18
+
         RowLayout {
-            spacing: 10
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
             anchors.fill: parent
+            spacing: 16
 
-            NavigableToolButton {
-                // Only make the button visible if the user has navigated somewhere.
-                visible: stackView.depth > 1
+            Ui.UiCard {
+                id: sideRail
+                visible: toolBar.visible
+                Layout.preferredWidth: 240
+                Layout.fillHeight: true
+                tone: "raised"
+                cornerRadius: 10
 
-                iconSource: "qrc:/res/arrow_left.svg"
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 14
+                    spacing: 12
 
-                onClicked: goBack()
+                    Ui.UiCard {
+                        Layout.fillWidth: true
+                        tone: "inset"
+                        cornerRadius: 8
+                        implicitHeight: brandBlock.implicitHeight + 24
 
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
-            }
+                        ColumnLayout {
+                            id: brandBlock
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 4
 
-            // This label will appear when the window gets too small and
-            // we need to ensure the toolbar controls don't collide
-            Label {
-                id: titleRowLabel
-                font.pointSize: titleLabel.font.pointSize
-                elide: Label.ElideRight
-                horizontalAlignment: Qt.AlignHCenter
-                verticalAlignment: Qt.AlignVCenter
-                Layout.fillWidth: true
+                            Label {
+                                text: qsTr("ARTEMIS")
+                                color: window.textColor
+                                font.pointSize: 11
+                                font.bold: true
+                            }
 
-                // We need this label to always be visible so it can occupy
-                // the remaining space in the RowLayout. To "hide" it, we
-                // just set the text to empty string.
-                text: !titleLabel.visible ? stackView.currentItem.objectName : ""
-            }
+                            Label {
+                                text: qsTr("Streaming client")
+                                color: window.mutedTextColor
+                                font.pointSize: 10
+                            }
+                        }
+                    }
 
-            Label {
-                id: versionLabel
-                visible: qmltypeof(stackView.currentItem, "SettingsView")
-                text: qsTr("Version %1").arg(SystemProperties.versionString)
-                font.pointSize: 12
-                horizontalAlignment: Qt.AlignRight
-                verticalAlignment: Qt.AlignVCenter
-            }
+                    Ui.UiNavButton {
+                        Layout.fillWidth: true
+                        text: qsTr("Computers")
+                        supportingText: qsTr("Hosts and applications")
+                        iconSource: "qrc:/res/lucide/server.svg"
+                        active: !currentItemIs("SettingsView")
+                        onClicked: showComputers()
+                    }
 
-            NavigableToolButton {
-                id: discordButton
-                visible: false // Temporarily disabled for Artemis
+                    Ui.UiNavButton {
+                        Layout.fillWidth: true
+                        text: qsTr("Settings")
+                        supportingText: qsTr("Client and stream preferences")
+                        iconSource: "qrc:/res/lucide/settings.svg"
+                        active: currentItemIs("SettingsView")
+                        onClicked: showSettings()
+                    }
 
-                iconSource: "qrc:/res/discord.svg"
+                    Item {
+                        Layout.fillHeight: true
+                    }
 
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Join our community on Discord")
+                    Ui.UiCard {
+                        Layout.fillWidth: true
+                        tone: "inset"
+                        cornerRadius: 8
+                        implicitHeight: footerRow.implicitHeight + 24
 
-                // TODO need to make sure browser is brought to foreground.
-                onClicked: Qt.openUrlExternally("https://moonlight-stream.org/discord");
+                        RowLayout {
+                            id: footerRow
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 12
 
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
-            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
 
-            NavigableToolButton {
-                id: addPcButton
-                visible: qmltypeof(stackView.currentItem, "PcView")
+                                Label {
+                                    text: qsTr("Version %1").arg(SystemProperties.versionString)
+                                    color: window.textColor
+                                    font.pointSize: 10
+                                    font.bold: true
+                                }
 
-                iconSource:  "qrc:/res/ic_add_to_queue_white_48px.svg"
+                                Label {
+                                    text: qsTr("Desktop streaming client")
+                                    color: window.mutedTextColor
+                                    font.pointSize: 9
+                                }
+                            }
 
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Add PC manually") + (newPcShortcut.nativeText ? (" ("+newPcShortcut.nativeText+")") : "")
-
-                Shortcut {
-                    id: newPcShortcut
-                    sequence: StandardKey.New
-                    onActivated: addPcButton.clicked()
-                }
-
-                onClicked: {
-                    addPcDialog.open()
-                }
-
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
-            }
-
-            NavigableToolButton {
-                property string browserUrl: ""
-
-                id: updateButton
-
-                iconSource: "qrc:/res/update.svg"
-
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered || visible
-
-                // Invisible until we get a callback notifying us that
-                // an update is available
-                visible: false
-
-                onClicked: {
-                    if (SystemProperties.hasBrowser) {
-                        Qt.openUrlExternally(browserUrl);
+                            Ui.UiButton {
+                                visible: SystemProperties.hasBrowser
+                                text: qsTr("Help ?")
+                                tone: "ghost"
+                                onClicked: Qt.openUrlExternally("https://github.com/wjbeckett/artemis/wiki/Setup-Guide")
+                            }
+                        }
                     }
                 }
-
-                function updateAvailable(version, url)
-                {
-                    ToolTip.text = qsTr("Update available for Artemis: Version %1").arg(version)
-                    updateButton.browserUrl = url
-                    updateButton.visible = true
-                }
-
-                Component.onCompleted: {
-                    AutoUpdateChecker.onUpdateAvailable.connect(updateAvailable)
-                    AutoUpdateChecker.start()
-                }
-
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
             }
 
-            NavigableToolButton {
-                id: helpButton
-                visible: SystemProperties.hasBrowser
+            Ui.UiCard {
+                id: workspace
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                tone: "raised"
+                cornerRadius: 10
 
-                iconSource: "qrc:/res/question_mark.svg"
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 18
+                    spacing: 16
 
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Help") + (helpShortcut.nativeText ? (" ("+helpShortcut.nativeText+")") : "")
+                    Item {
+                        id: workspaceHeader
+                        visible: toolBar.visible
+                        Layout.fillWidth: true
+                        implicitHeight: headerRow.implicitHeight
 
-                Shortcut {
-                    id: helpShortcut
-                    sequence: StandardKey.HelpContents
-                    onActivated: helpButton.clicked()
-                }
+                        RowLayout {
+                            id: headerRow
+                            anchors.fill: parent
+                            spacing: 12
 
-                // TODO need to make sure browser is brought to foreground.
-                onClicked: Qt.openUrlExternally("https://github.com/wjbeckett/artemis/wiki/Setup-Guide");
+                            Ui.UiIconButton {
+                                visible: stackView.depth > 1
+                                iconSource: "qrc:/res/lucide/arrow-left.svg"
+                                onClicked: goBack()
+                            }
 
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+
+                                Label {
+                                    text: currentPageTitle()
+                                    color: window.textColor
+                                    font.pointSize: 24
+                                    font.bold: true
+                                }
+
+                                Label {
+                                    text: currentPageDescription()
+                                    color: window.mutedTextColor
+                                    font.pointSize: 10
+                                    wrapMode: Text.Wrap
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            Ui.UiBadge {
+                                visible: currentItemIs("SettingsView")
+                                text: qsTr("Version %1").arg(SystemProperties.versionString)
+                            }
+
+                            Ui.UiButton {
+                                id: addPcButton
+                                visible: currentItemIs("PcView")
+                                text: qsTr("+ Add Host")
+                                onClicked: addPcDialog.open()
+                            }
+
+                            Ui.UiIconButton {
+                                property string browserUrl: ""
+
+                                id: updateButton
+                                visible: false
+                                iconSource: "qrc:/res/lucide/refresh-cw.svg"
+
+                                onClicked: {
+                                    if (SystemProperties.hasBrowser) {
+                                        Qt.openUrlExternally(browserUrl)
+                                    }
+                                }
+
+                                function updateAvailable(version, url)
+                                {
+                                    updateButton.browserUrl = url
+                                    updateButton.visible = true
+                                }
+
+                                Component.onCompleted: {
+                                    AutoUpdateChecker.onUpdateAvailable.connect(updateAvailable)
+                                    AutoUpdateChecker.start()
+                                }
+                            }
+
+                        }
+                    }
+
+                    Rectangle {
+                        visible: toolBar.visible
+                        Layout.fillWidth: true
+                        height: 1
+                        color: window.borderColor
+                    }
+
+                    StackView {
+                        id: stackView
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        focus: true
+                        clip: true
+
+                        Component.onCompleted: {
+                            doEarlyInit()
+                            push(initialView)
+                        }
+
+                        onCurrentItemChanged: {
+                            if (currentItem) {
+                                currentItem.forceActiveFocus()
+                            }
+                        }
+
+                        Keys.onEscapePressed: {
+                            if (depth > 1) {
+                                goBack()
+                            }
+                            else {
+                                quitConfirmationDialog.open()
+                            }
+                        }
+
+                        Keys.onBackPressed: {
+                            if (depth > 1) {
+                                goBack()
+                            }
+                            else {
+                                quitConfirmationDialog.open()
+                            }
+                        }
+
+                        Keys.onMenuPressed: {
+                            showSettings()
+                        }
+
+                        Keys.onHangupPressed: {
+                            showSettings()
+                        }
+                    }
                 }
             }
+        }
+    }
 
-            NavigableToolButton {
-                // TODO: Implement gamepad mapping then unhide this button
-                visible: false
+    Shortcut {
+        id: settingsShortcut
+        sequence: StandardKey.Preferences
+        onActivated: showSettings()
+    }
 
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Gamepad Mapper")
+    Shortcut {
+        id: newPcShortcut
+        sequence: StandardKey.New
+        onActivated: addPcDialog.open()
+    }
 
-                iconSource: "qrc:/res/ic_videogame_asset_white_48px.svg"
-
-                onClicked: navigateTo("qrc:/gui/GamepadMapper.qml", "GamepadMapper")
-
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
-            }
-
-            NavigableToolButton {
-                id: settingsButton
-
-                iconSource:  "qrc:/res/settings.svg"
-
-                onClicked: navigateTo("qrc:/gui/SettingsView.qml", "SettingsView")
-
-                Keys.onDownPressed: {
-                    stackView.currentItem.forceActiveFocus(Qt.TabFocus)
-                }
-
-                Shortcut {
-                    id: settingsShortcut
-                    sequence: StandardKey.Preferences
-                    onActivated: settingsButton.clicked()
-                }
-
-                ToolTip.delay: 1000
-                ToolTip.timeout: 3000
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Settings") + (settingsShortcut.nativeText ? (" ("+settingsShortcut.nativeText+")") : "")
+    Shortcut {
+        id: helpShortcut
+        sequence: StandardKey.HelpContents
+        onActivated: {
+            if (SystemProperties.hasBrowser) {
+                Qt.openUrlExternally("https://github.com/wjbeckett/artemis/wiki/Setup-Guide")
             }
         }
     }
@@ -516,6 +625,7 @@ ApplicationWindow {
     NavigableDialog {
         id: addPcDialog
         property string label: qsTr("Enter the IP address of your host PC:")
+        width: 420
 
         standardButtons: Dialog.Ok | Dialog.Cancel
 
@@ -535,15 +645,21 @@ ApplicationWindow {
         }
 
         ColumnLayout {
-            Label {
-                text: addPcDialog.label
-                font.bold: true
+            width: parent.width
+            spacing: 12
+
+            Ui.UiSectionHeader {
+                Layout.fillWidth: true
+                eyebrow: qsTr("MANUAL HOST")
+                title: qsTr("Add a host by address")
+                description: qsTr("Use a LAN IP address or hostname if automatic discovery does not find your streaming PC.")
             }
 
-            TextField {
+            Ui.UiInput {
                 id: editText
                 Layout.fillWidth: true
                 focus: true
+                placeholderText: qsTr("192.168.1.78")
 
                 Keys.onReturnPressed: {
                     addPcDialog.accept()

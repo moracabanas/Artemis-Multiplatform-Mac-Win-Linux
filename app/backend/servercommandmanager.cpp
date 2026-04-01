@@ -1,6 +1,7 @@
 #include "servercommandmanager.h"
 #include "nvcomputer.h"
 #include "nvhttp.h"
+#include "serverpermissions.h"
 #include "streaming/session.h"
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -89,11 +90,38 @@ void ServerCommandManager::refreshCommands()
     
     qDebug() << "ServerCommandManager::refreshCommands: Starting refresh";
     qDebug() << "ServerCommandManager::refreshCommands: Server commands from computer:" << m_computer->serverCommands;
+
+    if (!isApolloServer()) {
+        m_hasPermission = false;
+        m_availableCommands.clear();
+        m_commandNames.clear();
+        m_commandDescriptions.clear();
+        m_refreshInProgress = false;
+        emit commandsRefreshed();
+
+        if (oldPermission != m_hasPermission) {
+            emit permissionChanged();
+        }
+        return;
+    }
+
+    m_hasPermission = checkServerCommandPermission();
+    if (!m_hasPermission) {
+        m_availableCommands.clear();
+        m_commandNames.clear();
+        m_commandDescriptions.clear();
+        m_refreshInProgress = false;
+        emit commandsRefreshed();
+
+        if (oldPermission != m_hasPermission) {
+            emit permissionChanged();
+        }
+        return;
+    }
     
     // Check if server commands are available from serverinfo XML (Android approach)
     if (!m_computer->serverCommands.isEmpty()) {
         qDebug() << "ServerCommandManager::refreshCommands: Found server commands in serverinfo XML";
-        m_hasPermission = true;
         m_availableCommands.clear();
         m_commandNames.clear();
         m_commandDescriptions.clear();
@@ -111,28 +139,20 @@ void ServerCommandManager::refreshCommands()
         
         // Try to fetch server commands from a separate endpoint (Apollo extension)
         fetchAvailableCommands();
-        
-        // For now, assume Apollo server and populate with builtin commands as fallback
-        if (isApolloServer()) {
-            m_hasPermission = true;
-            m_availableCommands.clear();
+
+        if (m_availableCommands.isEmpty()) {
             m_commandNames.clear();
             m_commandDescriptions.clear();
-            
+
             for (const auto &cmd : BUILTIN_COMMANDS) {
                 m_availableCommands.append(cmd.id);
                 m_commandNames[cmd.id] = cmd.name;
                 m_commandDescriptions[cmd.id] = cmd.description;
             }
-            
-            qDebug() << "ServerCommandManager::refreshCommands: Apollo server detected, using builtin commands:" << m_availableCommands;
+
+            qDebug() << "ServerCommandManager::refreshCommands: Using builtin commands with permission:" << m_availableCommands;
         } else {
-            m_hasPermission = false;
-            m_availableCommands.clear();
-            m_commandNames.clear();
-            m_commandDescriptions.clear();
-            
-            qDebug() << "ServerCommandManager::refreshCommands: Non-Apollo server, no commands available";
+            qDebug() << "ServerCommandManager::refreshCommands: Using fetched server commands:" << m_availableCommands;
         }
     }
     
@@ -226,10 +246,7 @@ bool ServerCommandManager::isApolloServer() const
         return false;
     }
     
-    // Simplified Apollo detection - always return true and let HTTP calls fail naturally
-    // This matches the approach used in ClipboardManager for better reliability
-    qDebug() << "ServerCommandManager::isApolloServer: Assuming Apollo server (simplified detection)";
-    return true;
+    return m_computer->isApolloHost;
 }
 
 void ServerCommandManager::fetchAvailableCommands()
@@ -618,3 +635,15 @@ void ServerCommandManager::noCommandsAvailable()
     // UI components can connect to this slot to display appropriate messaging
 }
 
+bool ServerCommandManager::checkServerCommandPermission()
+{
+    if (!m_computer || !m_computer->isApolloHost) {
+        return false;
+    }
+
+    if (!m_computer->hasPermissionSystem) {
+        return true;
+    }
+
+    return ServerPermissions::canExecuteServerCommands(m_computer->serverPermissions);
+}

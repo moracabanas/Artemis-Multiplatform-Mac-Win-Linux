@@ -1,6 +1,7 @@
 #include "clipboardmanager.h"
 #include "nvcomputer.h"
 #include "nvhttp.h"
+#include "serverpermissions.h"
 #include "settings/artemissettings.h"
 #include <QGuiApplication>
 #include <QMimeData>
@@ -193,10 +194,15 @@ bool ClipboardManager::isClipboardSyncSupported() const
         return false;
     }
 
-    // Based on Artemis Android implementation, we don't need complex Apollo detection.
-    // Just return true and let the HTTP calls succeed or fail naturally.
-    // The clipboard sync endpoints work with any server that supports them.
-    return true;
+    if (!m_computer->isApolloHost) {
+        return false;
+    }
+
+    if (!m_computer->hasPermissionSystem) {
+        return true;
+    }
+
+    return ServerPermissions::canAccessClipboard(m_computer->serverPermissions);
 }
 
 void ClipboardManager::onStreamStarted()

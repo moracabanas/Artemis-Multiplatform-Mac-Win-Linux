@@ -63,6 +63,9 @@ NvComputer::NvComputer(QSettings& settings)
     this->isSupportedServerVersion = true;
     this->externalPort = this->remoteAddress.port();
     this->activeHttpsPort = 0;
+    this->serverPermissions = 0;
+    this->isApolloHost = false;
+    this->hasPermissionSystem = false;
 }
 
 void NvComputer::setRemoteAddress(QHostAddress address)
@@ -117,6 +120,8 @@ bool NvComputer::isEqualSerialized(const NvComputer &that) const
            this->manualAddress == that.manualAddress &&
            this->serverCert == that.serverCert &&
            this->isNvidiaServerSoftware == that.isNvidiaServerSoftware &&
+           this->isApolloHost == that.isApolloHost &&
+           this->hasPermissionSystem == that.hasPermissionSystem &&
            this->apolloVersion == that.apolloVersion &&
            this->serverCommands == that.serverCommands &&
            this->serverPermissions == that.serverPermissions &&
@@ -220,12 +225,18 @@ NvComputer::NvComputer(NvHTTP& http, QString serverInfo)
     this->state = NvComputer::CS_ONLINE;
     this->pendingQuit = false;
     this->isSupportedServerVersion = CompatFetcher::isGfeVersionSupported(this->gfeVersion);
+    this->serverPermissions = 0;
+    this->isApolloHost = false;
+    this->hasPermissionSystem = false;
     
     // Parse server commands (Apollo/Sunshine servers only)
     this->serverCommands = NvHTTP::getXmlArray(serverInfo, "ServerCommand");
     
     // Parse server permissions (Apollo servers only)
     QString permissionStr = NvHTTP::getXmlString(serverInfo, "Permission");
+    this->hasPermissionSystem = !permissionStr.isEmpty();
+    this->isApolloHost = !this->apolloVersion.isEmpty() || this->hasPermissionSystem;
+
     if (!permissionStr.isEmpty()) {
         bool ok;
         this->serverPermissions = permissionStr.toUInt(&ok);
@@ -591,6 +602,8 @@ bool NvComputer::update(const NvComputer& that)
     ASSIGN_IF_CHANGED(isNvidiaServerSoftware);
     ASSIGN_IF_CHANGED(maxLumaPixelsHEVC);
     ASSIGN_IF_CHANGED(gpuModel);
+    ASSIGN_IF_CHANGED(isApolloHost);
+    ASSIGN_IF_CHANGED(hasPermissionSystem);
     ASSIGN_IF_CHANGED(apolloVersion);
     ASSIGN_IF_CHANGED_AND_NONNULL(serverCert);
     ASSIGN_IF_CHANGED_AND_NONEMPTY(displayModes);

@@ -1,6 +1,7 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
+import "ui" as Ui
 
 import ComputerModel 1.0
 
@@ -11,14 +12,187 @@ import SdlGamepadKeyNavigation 1.0
 
 CenteredGridView {
     property ComputerModel computerModel : createModel()
+    property color cardColor: window ? window.surfaceColor : "#18181b"
+    property color cardBorderColor: window ? window.borderColor : "#2f2f35"
+    property color accentColor: window ? window.accentColor : "#fafafa"
 
     id: pcGrid
     focus: true
     activeFocusOnTab: true
-    topMargin: 20
-    bottomMargin: 5
-    cellWidth: 310; cellHeight: 330;
+    topMargin: 8
+    bottomMargin: 8
+    cellWidth: Math.max(520, width - 28)
+    cellHeight: 212
     objectName: qsTr("Computers")
+
+    function statusText(online, paired, busy, statusUnknown) {
+        if (statusUnknown) {
+            return qsTr("Checking")
+        }
+        if (!online) {
+            return qsTr("Offline")
+        }
+        if (!paired) {
+            return qsTr("Needs pairing")
+        }
+        if (busy) {
+            return qsTr("Streaming")
+        }
+        return qsTr("Ready")
+    }
+
+    function statusColor(online, paired, busy, statusUnknown) {
+        if (statusUnknown) {
+            return "#18181b"
+        }
+        if (!online) {
+            return "#1f1f23"
+        }
+        if (!paired) {
+            return "#111113"
+        }
+        if (busy) {
+            return "#e4e4e7"
+        }
+        return "#fafafa"
+    }
+
+    function statusTextColor(online, paired, busy, statusUnknown) {
+        if (busy || (online && paired && !statusUnknown)) {
+            return "#09090b"
+        }
+
+        return "#fafafa"
+    }
+
+    function statusBorderColor(online, paired, busy, statusUnknown) {
+        if (statusUnknown) {
+            return "#3f3f46"
+        }
+        if (!online) {
+            return "#3f3f46"
+        }
+        if (!paired) {
+            return "#52525b"
+        }
+        if (busy) {
+            return "#f4f4f5"
+        }
+        return "#fafafa"
+    }
+
+    function serverLabel(apolloVersion, apolloHost) {
+        if (apolloVersion) {
+            return qsTr("Apollo %1").arg(apolloVersion)
+        }
+        if (apolloHost) {
+            return qsTr("Apollo host")
+        }
+        return qsTr("Compatible host")
+    }
+
+    function statusIcon(online, paired, busy, statusUnknown) {
+        if (statusUnknown) {
+            return "qrc:/res/lucide/search.svg"
+        }
+        if (!online) {
+            return "qrc:/res/lucide/triangle-alert.svg"
+        }
+        if (!paired) {
+            return "qrc:/res/lucide/lock.svg"
+        }
+        if (busy) {
+            return "qrc:/res/lucide/power.svg"
+        }
+        return "qrc:/res/lucide/monitor.svg"
+    }
+
+    function actionText(online, paired, apolloHost, serverPermissions) {
+        if (!online) {
+            return qsTr("Wake the machine, test the path, rename it, or inspect host details from one place.")
+        }
+        if (!paired) {
+            return qsTr("Complete pairing once, then browsing and stream launch controls will unlock.")
+        }
+        if (apolloHost && (serverPermissions & 0x04000000) === 0) {
+            return qsTr("Browse the exported app list now. Launch permission is still controlled by Apollo.")
+        }
+        return qsTr("Open the app library, start a stream, or manage this host.")
+    }
+
+    function primaryActionLabel(online, paired) {
+        if (!online) {
+            return qsTr("Open host actions")
+        }
+        if (!paired) {
+            return qsTr("Pair host")
+        }
+        return qsTr("Open apps")
+    }
+
+    function statusTitle(online, paired, busy, statusUnknown) {
+        if (statusUnknown) {
+            return qsTr("Checking availability")
+        }
+        if (!online) {
+            return qsTr("Host is offline")
+        }
+        if (!paired) {
+            return qsTr("Pairing required")
+        }
+        if (busy) {
+            return qsTr("Session is active")
+        }
+        return qsTr("Ready to browse")
+    }
+
+    function statusDescription(online, paired, busy, statusUnknown, apolloHost, serverPermissions) {
+        if (statusUnknown) {
+            return qsTr("Artemis is refreshing this host and checking what actions are available right now.")
+        }
+        if (!online) {
+            return qsTr("Open the actions menu to wake the machine, run a network test, rename it, or inspect details.")
+        }
+        if (!paired) {
+            return qsTr("Select this row to pair the client, then app browsing and session launch will be available.")
+        }
+        if (busy) {
+            return qsTr("A stream is already running. Open the row to browse apps or manage the active session.")
+        }
+        if (apolloHost && (serverPermissions & 0x04000000) === 0) {
+            return qsTr("Select the row to browse exported apps. Apollo still controls whether launching is allowed.")
+        }
+        return qsTr("Select the row to open the app library, launch a stream, or manage this host.")
+    }
+
+    function openAppView(targetIndex, showHiddenGames) {
+        if (targetIndex < 0) {
+            return
+        }
+
+        var component = Qt.createComponent("AppView.qml")
+        var appView = component.createObject(stackView, {
+            "computerIndex": targetIndex,
+            "objectName": computerModel.data(computerModel.index(targetIndex, 0), ComputerModel.NameRole) || "Computer",
+            "showHiddenGames": showHiddenGames === true
+        })
+        stackView.push(appView)
+    }
+
+    function startStandardPairing(targetIndex) {
+        otpPairDialog.computerIndex = -1
+        var pin = computerModel.generatePinString()
+        pairDialog.computerIndex = targetIndex
+        computerModel.pairComputer(targetIndex, pin)
+        pairDialog.pin = pin
+        pairDialog.open()
+    }
+
+    function startOtpPairing(targetIndex) {
+        pairDialog.computerIndex = -1
+        otpPairDialog.computerIndex = targetIndex
+        otpPairDialog.open()
+    }
 
     Component.onCompleted: {
         // Don't show any highlighted item until interacting with them.
@@ -47,6 +221,8 @@ CenteredGridView {
     function pairingComplete(error)
     {
         console.log("PcView.pairingComplete called with error:", error)
+
+        var targetIndex = pairDialog.computerIndex >= 0 ? pairDialog.computerIndex : otpPairDialog.computerIndex
         
         // Close both PIN dialogs
         pairDialog.close()
@@ -60,30 +236,19 @@ CenteredGridView {
             errorDialog.open()
         } else {
             console.log("PcView: Pairing successful, attempting navigation")
-            
-            // Successful pairing - navigate to AppView like Android does
-            // Find the computer that was just paired (should now be paired)
-            // Use OTP dialog's computer index if available, otherwise find first paired computer
-            var targetIndex = otpPairDialog.computerIndex >= 0 ? otpPairDialog.computerIndex : -1
-            
             console.log("PcView: Target index for navigation:", targetIndex)
             
             if (targetIndex >= 0) {
                 console.log("PcView: Creating AppView for computer index:", targetIndex)
-                
-                // Navigate to the AppView for the newly paired computer
-                var component = Qt.createComponent("AppView.qml")
-                var appView = component.createObject(stackView, {
-                    "computerIndex": targetIndex, 
-                    "objectName": computerModel.data(computerModel.index(targetIndex, 0), ComputerModel.NameRole) || "Computer"
-                })
-                stackView.push(appView)
-                
+                pcGrid.openAppView(targetIndex, false)
                 console.log("PcView: Navigation completed")
             } else {
                 console.log("PcView: No valid target index, cannot navigate")
             }
         }
+
+        pairDialog.computerIndex = -1
+        otpPairDialog.computerIndex = -1
     }
 
     function addComplete(success, detectedPortBlocking)
@@ -111,80 +276,207 @@ CenteredGridView {
         return model
     }
 
-    Row {
+    Ui.UiEmptyState {
         anchors.centerIn: parent
-        spacing: 5
+        width: Math.min(pcGrid.width - 32, 560)
         visible: pcGrid.count === 0
-
-        BusyIndicator {
-            id: searchSpinner
-            visible: StreamingPreferences.enableMdns
-        }
-
-        Label {
-            height: searchSpinner.height
-            elide: Label.ElideRight
-            text: StreamingPreferences.enableMdns ? qsTr("Searching for compatible hosts on your local network...")
-                                                  : qsTr("Automatic PC discovery is disabled. Add your PC manually.")
-            font.pointSize: 20
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.Wrap
-        }
+        busy: StreamingPreferences.enableMdns
+        iconSource: "qrc:/res/lucide/server.svg"
+        title: StreamingPreferences.enableMdns
+               ? qsTr("Searching for compatible hosts on your local network...")
+               : qsTr("Automatic host discovery is disabled.")
+        body: StreamingPreferences.enableMdns
+              ? qsTr("Make sure your host is on the same network and allowed through its firewall. If it still does not appear, use the Add Host action to register it manually.")
+              : qsTr("Turn on local discovery in Settings or use the Add Host action to register a host directly.")
     }
 
     model: computerModel
 
     delegate: NavigableItemDelegate {
-        width: 300; height: 320;
+        id: hostTile
+        width: Math.max(480, pcGrid.cellWidth - 12)
+        height: 176
         grid: pcGrid
+        hoverEnabled: true
 
         property alias pcContextMenu : pcContextMenuLoader.item
 
-        Image {
-            id: pcIcon
-            anchors.horizontalCenter: parent.horizontalCenter
-            source: "qrc:/res/desktop_windows-48px.svg"
-            sourceSize {
-                width: 200
-                height: 200
+        function openHostMenu(anchorItem) {
+            var target = anchorItem || hostMenuButton
+
+            if (target) {
+                var position = target.mapToItem(hostTile, 0, target.height + 6)
+                pcContextMenu.x = position.x - Math.max(0, pcContextMenu.width - target.width)
+                pcContextMenu.y = position.y
+                pcContextMenu.open()
+            }
+            else if (pcContextMenu.popup) {
+                pcContextMenu.popup()
+            }
+            else {
+                pcContextMenu.open()
             }
         }
 
-        Image {
-            // TODO: Tooltip
-            id: stateIcon
-            anchors.horizontalCenter: pcIcon.horizontalCenter
-            anchors.verticalCenter: pcIcon.verticalCenter
-            anchors.verticalCenterOffset: !model.online ? -18 : -16
-            visible: !model.statusUnknown && (!model.online || !model.paired)
-            source: !model.online ? "qrc:/res/warning_FILL1_wght300_GRAD200_opsz24.svg" : "qrc:/res/baseline-lock-24px.svg"
-            sourceSize {
-                width: !model.online ? 75 : 70
-                height: !model.online ? 75 : 70
+        function activatePrimaryAction() {
+            if (model.online) {
+                if (!model.serverSupported) {
+                    errorDialog.text = qsTr("The version of GeForce Experience on %1 is not supported by this build of Moonlight. You must update Moonlight to stream from %1.").arg(model.name)
+                    errorDialog.helpText = ""
+                    errorDialog.open()
+                }
+                else if (model.paired) {
+                    pcGrid.openAppView(index, false)
+                }
+                else {
+                    if (computerModel.isOTPSupported(index)) {
+                        pcGrid.startOtpPairing(index)
+                    } else {
+                        pcGrid.startStandardPairing(index)
+                    }
+                }
+            }
+            else {
+                openHostMenu()
             }
         }
 
-        BusyIndicator {
-            id: statusUnknownSpinner
-            anchors.horizontalCenter: pcIcon.horizontalCenter
-            anchors.verticalCenter: pcIcon.verticalCenter
-            anchors.verticalCenterOffset: -15
-            width: 75
-            height: 75
-            visible: model.statusUnknown
+        background: Ui.UiCard {
+            cornerRadius: 8
+            border.width: highlighted ? 2 : 1
+            border.color: highlighted ? pcGrid.accentColor : pcGrid.cardBorderColor
+            color: highlighted ? (window ? window.elevatedSurfaceColor : "#151518")
+                               : (window ? window.surfaceColor : "#111113")
         }
 
-        Label {
-            id: pcNameText
-            text: model.name
+        contentItem: RowLayout {
+            anchors.fill: parent
+            anchors.margins: 16
+            spacing: 14
 
-            width: parent.width
-            anchors.top: pcIcon.bottom
-            anchors.bottom: parent.bottom
-            font.pointSize: 36
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.Wrap
-            elide: Text.ElideRight
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 8
+
+                Row {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Ui.UiBadge {
+                        text: pcGrid.statusText(model.online, model.paired, model.busy, model.statusUnknown)
+                        tone: (model.online && model.paired && !model.statusUnknown) || model.busy ? "strong" : "default"
+                    }
+
+                    Ui.UiBadge {
+                        text: pcGrid.serverLabel(model.apolloVersion, model.apolloHost)
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+
+                    Ui.UiCard {
+                        Layout.preferredWidth: 60
+                        Layout.preferredHeight: 60
+                        tone: "inset"
+                        cornerRadius: 8
+
+                        BusyIndicator {
+                            anchors.centerIn: parent
+                            width: 24
+                            height: 24
+                            visible: model.statusUnknown
+                            running: visible
+                        }
+
+                        Ui.UiIcon {
+                            anchors.centerIn: parent
+                            visible: !model.statusUnknown
+                            source: pcGrid.statusIcon(model.online, model.paired, model.busy, model.statusUnknown)
+                            iconSize: 24
+                        }
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        Label {
+                            id: pcNameText
+                            text: model.name
+                            Layout.fillWidth: true
+                            font.pointSize: 20
+                            font.bold: true
+                            color: window ? window.textColor : "#fafafa"
+                            wrapMode: Text.Wrap
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: model.online
+                                  ? (model.paired
+                                     ? qsTr("Ready to browse apps, launch sessions, and manage the host.")
+                                     : qsTr("Host is online but still needs pairing before streaming can start."))
+                                  : qsTr("Host is currently offline or unreachable from this device.")
+                            color: window ? window.mutedTextColor : "#a1a1aa"
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+
+                Item {
+                    Layout.fillHeight: true
+                }
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                color: window ? window.borderColor : "#27272a"
+            }
+
+            ColumnLayout {
+                Layout.preferredWidth: 248
+                Layout.fillHeight: true
+                spacing: 8
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    Ui.UiSectionHeader {
+                        Layout.fillWidth: true
+                        eyebrow: qsTr("STATUS")
+                        title: pcGrid.statusTitle(model.online, model.paired, model.busy, model.statusUnknown)
+                        description: pcGrid.statusDescription(model.online, model.paired, model.busy, model.statusUnknown, model.apolloHost, model.serverPermissions)
+                    }
+
+                    Ui.UiIconButton {
+                        id: hostMenuButton
+                        iconSource: "qrc:/res/lucide/chevron-down.svg"
+                        onClicked: hostTile.openHostMenu(hostMenuButton)
+                    }
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    visible: pcGrid.count === 1
+                    text: model.online && model.paired
+                          ? qsTr("Click the row to open apps.")
+                          : qsTr("Click the row to continue.")
+                    color: window ? window.mutedTextColor : "#a1a1aa"
+                    font.pointSize: 9
+                    wrapMode: Text.Wrap
+                }
+
+                Item {
+                    Layout.fillHeight: true
+                }
+            }
         }
 
         Loader {
@@ -193,17 +485,34 @@ CenteredGridView {
             sourceComponent: NavigableMenu {
                 id: pcContextMenu
                 MenuItem {
+                    id: statusMenuItem
                     text: qsTr("PC Status: %1").arg(model.online ? qsTr("Online") : qsTr("Offline"))
-                    font.bold: true
+                    leftPadding: 12
+                    rightPadding: 12
+                    topPadding: 10
+                    bottomPadding: 10
+                    implicitWidth: 220
                     enabled: false
+
+                    background: Rectangle {
+                        radius: 6
+                        color: "transparent"
+                    }
+
+                    contentItem: Label {
+                        text: statusMenuItem.text
+                        color: window ? window.mutedTextColor : "#a1a1aa"
+                        font.pointSize: 10
+                        font.bold: true
+                        elide: Text.ElideRight
+                        verticalAlignment: Text.AlignVCenter
+                    }
                 }
                 NavigableMenuItem {
                     parentMenu: pcContextMenu
                     text: qsTr("View All Apps")
                     onTriggered: {
-                        var component = Qt.createComponent("AppView.qml")
-                        var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name, "showHiddenGames": true})
-                        stackView.push(appView)
+                        pcGrid.openAppView(index, true)
                     }
                     visible: model.online && model.paired
                 }
@@ -215,25 +524,15 @@ CenteredGridView {
                 }
                 NavigableMenuItem {
                     parentMenu: pcContextMenu
-                    text: qsTr("Pair")
-                    onTriggered: {
-                        // Use standard pairing for GeForce Experience
-                        var pin = computerModel.generatePinString()
-                        computerModel.pairComputer(index, pin)
-                        pairDialog.pin = pin
-                        pairDialog.open()
-                    }
+                    text: computerModel.isOTPSupported(index) ? qsTr("Pair with PIN") : qsTr("Pair")
+                    onTriggered: pcGrid.startStandardPairing(index)
                     visible: model.online && !model.paired
                 }
                 NavigableMenuItem {
                     parentMenu: pcContextMenu
-                    text: qsTr("Pair using OTP")
-                    onTriggered: {
-                        // Show OTP pairing dialog
-                        otpPairDialog.computerIndex = index
-                        otpPairDialog.open()
-                    }
-                    visible: model.online && !model.paired
+                    text: qsTr("Pair with OTP / passphrase")
+                    onTriggered: pcGrid.startOtpPairing(index)
+                    visible: model.online && !model.paired && computerModel.isOTPSupported(index)
                 }
                 NavigableMenuItem {
                     parentMenu: pcContextMenu
@@ -273,51 +572,10 @@ CenteredGridView {
             }
         }
 
-        onClicked: {
-            if (model.online) {
-                if (!model.serverSupported) {
-                    errorDialog.text = qsTr("The version of GeForce Experience on %1 is not supported by this build of Moonlight. You must update Moonlight to stream from %1.").arg(model.name)
-                    errorDialog.helpText = ""
-                    errorDialog.open()
-                }
-                else if (model.paired) {
-                    // go to game view
-                    var component = Qt.createComponent("AppView.qml")
-                    var appView = component.createObject(stackView, {"computerIndex": index, "objectName": model.name})
-                    stackView.push(appView)
-                }
-                else {
-                    // If we know this is an Apollo server, use OTP. Otherwise, use PIN.
-                    if (model.apolloVersion) {
-                        otpPairDialog.computerIndex = index
-                        otpPairDialog.open()
-                    } else {
-                        // Default to standard PIN pairing on click
-                        var pin = computerModel.generatePinString()
-
-                        // Kick off pairing in the background
-                        computerModel.pairComputer(index, pin)
-
-                        // Display the pairing dialog
-                        pairDialog.pin = pin
-                        pairDialog.open()
-                    }
-                }
-            } else if (!model.online) {
-                // Using open() here because it may be activated by keyboard
-                pcContextMenu.open()
-            }
-        }
+        onClicked: activatePrimaryAction()
 
         onPressAndHold: {
-            // popup() ensures the menu appears under the mouse cursor
-            if (pcContextMenu.popup) {
-                pcContextMenu.popup()
-            }
-            else {
-                // Qt 5.9 doesn't have popup()
-                pcContextMenu.open()
-            }
+            openHostMenu()
         }
 
         MouseArea {
@@ -351,6 +609,7 @@ CenteredGridView {
 
     NavigableMessageDialog {
         id: pairDialog
+        property int computerIndex: -1
 
         // Pairing dialog must be modal to prevent double-clicks from triggering
         // pairing twice
@@ -364,6 +623,7 @@ CenteredGridView {
         standardButtons: Dialog.Cancel
         onRejected: {
             // FIXME: We should interrupt pairing here
+            pairDialog.computerIndex = -1
         }
     }
 
@@ -394,16 +654,16 @@ CenteredGridView {
         {
             if (result === -1) {
                 text = qsTr("The network test could not be performed because none of Moonlight's connection testing servers were reachable from this PC. Check your Internet connection or try again later.")
-                imageSrc = "qrc:/res/baseline-warning-24px.svg"
+                imageSrc = "qrc:/res/lucide/triangle-alert.svg"
             }
             else if (result === 0) {
                 text = qsTr("This network does not appear to be blocking Moonlight. If you still have trouble connecting, check your PC's firewall settings.") + "\n\n" + qsTr("If you are trying to stream over the Internet, install the Moonlight Internet Hosting Tool on your gaming PC and run the included Internet Streaming Tester to check your gaming PC's Internet connection.")
-                imageSrc = "qrc:/res/baseline-check_circle_outline-24px.svg"
+                imageSrc = "qrc:/res/lucide/circle-check.svg"
             }
             else {
                 text = qsTr("Your PC's current network connection seems to be blocking Moonlight. Streaming over the Internet may not work while connected to this network.") + "\n\n" + qsTr("The following network ports were blocked:") + "\n"
                 text += blockedPorts
-                imageSrc = "qrc:/res/baseline-error_outline-24px.svg"
+                imageSrc = "qrc:/res/lucide/circle-alert.svg"
             }
 
             // Stop showing the spinner and show the image instead
@@ -440,7 +700,7 @@ CenteredGridView {
                 font.bold: true
             }
 
-            TextField {
+            Ui.UiInput {
                 id: editText
                 placeholderText: renamePcDialog.originalName
                 Layout.fillWidth: true
@@ -550,6 +810,10 @@ CenteredGridView {
                 errorDialog.open()
             }
         }
+
+        onRejected: {
+            otpPairDialog.computerIndex = -1
+        }
         
         ColumnLayout {
             width: parent.width
@@ -576,7 +840,7 @@ CenteredGridView {
                     font.bold: true
                 }
                 
-                TextField {
+                Ui.UiInput {
                     id: pinField
                     placeholderText: qsTr("Enter 4-digit PIN")
                     Layout.fillWidth: true
@@ -599,7 +863,7 @@ CenteredGridView {
                     font.bold: true
                 }
                 
-                TextField {
+                Ui.UiInput {
                     id: passphraseField
                     placeholderText: qsTr("Enter passphrase (leave blank for default)")
                     Layout.fillWidth: true

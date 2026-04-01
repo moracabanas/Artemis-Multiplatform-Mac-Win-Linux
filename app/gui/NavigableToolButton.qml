@@ -1,27 +1,39 @@
 import QtQuick 2.0
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
+import "ui" as Ui
 
 ToolButton {
+    id: control
     property string iconSource
 
     activeFocusOnTab: true
+    implicitWidth: 38
+    implicitHeight: 38
+    padding: 9
 
-    // FIXME: We're using an Image here rather than icon.source because
-    // icons don't work on Qt 5.9 LTS.
-    Image {
-        id: image
-        source: iconSource
-        anchors.centerIn: parent.background
-        sourceSize {
-            width: parent.background.width * 1.10
-            height: parent.background.height * 1.10
-        }
+    background: Rectangle {
+        radius: 6
+        color: control.down
+               ? (window ? window.surfaceInsetColor : "#0d0d10")
+               : ((control.hovered || control.visualFocus)
+                  ? (window ? window.surfaceMutedColor : "#1c1c21")
+                  : (window ? window.surfaceColor : "#111113"))
+        border.width: 1
+        border.color: control.visualFocus
+                      ? (window ? window.accentColor : "#fafafa")
+                      : ((control.hovered || control.down)
+                         ? (window ? window.borderStrongColor : "#3f3f46")
+                         : (window ? window.borderColor : "#27272a"))
     }
 
-    // This determines the size of the Material highlight. We increase it
-    // from the default because we use larger than normal icons for TV readability.
-    Layout.preferredHeight: parent.height
+    Ui.UiIcon {
+        source: iconSource
+        anchors.centerIn: parent
+        iconOpacity: control.enabled ? 1.0 : 0.55
+        iconSize: 16
+    }
+    Layout.preferredHeight: implicitHeight
 
     Keys.onReturnPressed: {
         clicked()

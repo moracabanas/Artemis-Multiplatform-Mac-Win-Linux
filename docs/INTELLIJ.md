@@ -11,6 +11,7 @@ These runners are macOS-only. They do not build Windows or Linux artifacts from 
   - Output directory: `build/jetbrains/macos-release`
 - `Run macOS Artemis`
   - Launches the built macOS app bundle from `build/jetbrains/macos-release/app/Artemis.app`
+  - Uses Launch Services (`open`) instead of running the inner Mach-O directly so focus, permission prompts, and Local Network privacy behave like a normal macOS app launch
 
 ## Prerequisites
 

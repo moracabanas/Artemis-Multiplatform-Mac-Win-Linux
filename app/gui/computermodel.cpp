@@ -46,6 +46,10 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         return computer->isSupportedServerVersion;
     case ApolloVersionRole:
         return computer->apolloVersion;
+    case ApolloHostRole:
+        return computer->isApolloHost;
+    case ServerPermissionsRole:
+        return static_cast<qulonglong>(computer->serverPermissions);
     case DetailsRole: {
         QString state, pairState;
 
@@ -97,9 +101,15 @@ QVariant ComputerModel::data(const QModelIndex& index, int role) const
         details += '\n' + tr("═══ SYSTEM INFORMATION ═══") + '\n';
         details += tr("UUID: %1").arg(computer->uuid) + '\n';
         details += tr("MAC Address: %1").arg(computer->macAddress.isEmpty() ? tr("Unknown") : QString(computer->macAddress.toHex(':'))) + '\n';
+        if (computer->isApolloHost) {
+            const QString hostType = computer->apolloVersion.isEmpty()
+                    ? tr("Apollo-compatible host")
+                    : tr("Apollo %1").arg(computer->apolloVersion);
+            details += tr("Host Type: %1").arg(hostType) + '\n';
+        }
 
         // Server Capabilities Section (Apollo/Sunshine servers only)
-        if (computer->serverPermissions != 0) {
+        if (computer->hasPermissionSystem) {
             details += '\n' + tr("═══ SERVER CAPABILITIES ═══") + '\n';
             
             QString detailedPermissions = ServerPermissions::getDetailedPermissions(computer->serverPermissions);
@@ -145,6 +155,8 @@ QHash<int, QByteArray> ComputerModel::roleNames() const
     names[ServerSupportedRole] = "serverSupported";
     names[DetailsRole] = "details";
     names[ApolloVersionRole] = "apolloVersion";
+    names[ApolloHostRole] = "apolloHost";
+    names[ServerPermissionsRole] = "serverPermissions";
 
     return names;
 }
@@ -269,8 +281,7 @@ bool ComputerModel::isOTPSupported(int computerIndex)
     NvComputer* computer = m_Computers[computerIndex];
     QReadLocker lock(&computer->lock);
     
-    // OTP pairing is only available with Apollo/Sunshine servers (not Nvidia GeForce Experience)
-    return !computer->isNvidiaServerSoftware;
+    return computer->isApolloHost;
 }
 
 void ComputerModel::handlePairingCompleted(NvComputer*, QString error)

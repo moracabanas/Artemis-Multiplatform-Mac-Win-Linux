@@ -35,6 +35,43 @@ bool ServerPermissions::hasPermission(quint32 permissions, PermissionFlags flag)
     return (permissions & static_cast<quint32>(flag)) != 0;
 }
 
+bool ServerPermissions::canListApps(quint32 permissions)
+{
+    return hasPermission(permissions, LIST_APPS) ||
+           canViewStreams(permissions);
+}
+
+bool ServerPermissions::canViewStreams(quint32 permissions)
+{
+    return hasPermission(permissions, VIEW_STREAMS) ||
+           canLaunchApps(permissions);
+}
+
+bool ServerPermissions::canLaunchApps(quint32 permissions)
+{
+    return hasPermission(permissions, LAUNCH_APPS);
+}
+
+bool ServerPermissions::canReadClipboard(quint32 permissions)
+{
+    return hasPermission(permissions, CLIPBOARD_READ);
+}
+
+bool ServerPermissions::canWriteClipboard(quint32 permissions)
+{
+    return hasPermission(permissions, CLIPBOARD_SET);
+}
+
+bool ServerPermissions::canAccessClipboard(quint32 permissions)
+{
+    return canReadClipboard(permissions) || canWriteClipboard(permissions);
+}
+
+bool ServerPermissions::canExecuteServerCommands(quint32 permissions)
+{
+    return hasPermission(permissions, SERVER_COMMAND);
+}
+
 QString ServerPermissions::formatPermissions(quint32 permissions, bool showHex)
 {
     QString result;
@@ -58,10 +95,10 @@ QString ServerPermissions::formatPermissions(quint32 permissions, bool showHex)
     if (hasPermission(permissions, CLIPBOARD_READ)) enabledPermissions << "Read Clipboard";
     if (hasPermission(permissions, FILE_UPLOAD)) enabledPermissions << "Upload Files";
     if (hasPermission(permissions, FILE_DOWNLOAD)) enabledPermissions << "Download Files";
-    if (hasPermission(permissions, SERVER_COMMAND)) enabledPermissions << "Server Commands";
-    if (hasPermission(permissions, LIST_APPS)) enabledPermissions << "List Apps";
-    if (hasPermission(permissions, VIEW_STREAMS)) enabledPermissions << "View Streams";
-    if (hasPermission(permissions, LAUNCH_APPS)) enabledPermissions << "Launch Apps";
+    if (canExecuteServerCommands(permissions)) enabledPermissions << "Server Commands";
+    if (canListApps(permissions)) enabledPermissions << "List Apps";
+    if (canViewStreams(permissions)) enabledPermissions << "View Streams";
+    if (canLaunchApps(permissions)) enabledPermissions << "Launch Apps";
     
     if (showHex && !enabledPermissions.isEmpty()) {
         result += " (" + enabledPermissions.join(", ") + ")";
@@ -91,18 +128,18 @@ QString ServerPermissions::getDetailedPermissions(quint32 permissions)
     // System capabilities with enhanced formatting
     lines << tr("SYSTEM CAPABILITIES");
     lines << tr("──────────────────");
-    lines << QString("  • Clipboard Read: %1").arg(hasPermission(permissions, CLIPBOARD_READ) ? "✓ Enabled" : "✗ Disabled");
-    lines << QString("  • Clipboard Write: %1").arg(hasPermission(permissions, CLIPBOARD_SET) ? "✓ Enabled" : "✗ Disabled");
-    lines << QString("  • Server Commands: %1").arg(hasPermission(permissions, SERVER_COMMAND) ? "✓ Enabled" : "✗ Disabled");
+    lines << QString("  • Clipboard Read: %1").arg(canReadClipboard(permissions) ? "✓ Enabled" : "✗ Disabled");
+    lines << QString("  • Clipboard Write: %1").arg(canWriteClipboard(permissions) ? "✓ Enabled" : "✗ Disabled");
+    lines << QString("  • Server Commands: %1").arg(canExecuteServerCommands(permissions) ? "✓ Enabled" : "✗ Disabled");
     
     lines << ""; // Empty line for spacing
     
     // App management capabilities with enhanced formatting
     lines << tr("APP MANAGEMENT");
     lines << tr("─────────────");
-    lines << QString("  • List Apps: %1").arg(hasPermission(permissions, LIST_APPS) ? "✓ Enabled" : "✗ Disabled");
-    lines << QString("  • View Streams: %1").arg((permissions & (VIEW_STREAMS | LIST_APPS)) != 0 ? "✓ Enabled" : "✗ Disabled");
-    lines << QString("  • Launch Apps: %1").arg((permissions & (LAUNCH_APPS | VIEW_STREAMS | LIST_APPS)) != 0 ? "✓ Enabled" : "✗ Disabled");
+    lines << QString("  • List Apps: %1").arg(canListApps(permissions) ? "✓ Enabled" : "✗ Disabled");
+    lines << QString("  • View Streams: %1").arg(canViewStreams(permissions) ? "✓ Enabled" : "✗ Disabled");
+    lines << QString("  • Launch Apps: %1").arg(canLaunchApps(permissions) ? "✓ Enabled" : "✗ Disabled");
     
     return lines.join('\n');
 }
@@ -130,11 +167,11 @@ QString ServerPermissions::getDetailedPermissionsHtml(quint32 permissions)
     lines << "<div style='margin-bottom: 16px;'>";
     lines << "<h3 style='color: #9b59b6; font-size: 14px; font-weight: 600; margin: 0 0 8px 0; border-bottom: 1px solid #bdc3c7; padding-bottom: 4px;'>System Capabilities</h3>";
     lines << QString("<div style='margin-left: 12px; line-height: 1.5;'>");
-    lines << QString("  <span style='%1'>•</span> <strong>Clipboard Read:</strong> %2<br/>").arg(hasPermission(permissions, CLIPBOARD_READ) ? "color: #27ae60;" : "color: #e74c3c;").arg(hasPermission(permissions, CLIPBOARD_READ) ? "Enabled" : "Disabled");
-    lines << QString("  <span style='%1'>•</span> <strong>Clipboard Write:</strong> %2<br/>").arg(hasPermission(permissions, CLIPBOARD_SET) ? "color: #27ae60;" : "color: #e74c3c;").arg(hasPermission(permissions, CLIPBOARD_SET) ? "Enabled" : "Disabled");
+    lines << QString("  <span style='%1'>•</span> <strong>Clipboard Read:</strong> %2<br/>").arg(canReadClipboard(permissions) ? "color: #27ae60;" : "color: #e74c3c;").arg(canReadClipboard(permissions) ? "Enabled" : "Disabled");
+    lines << QString("  <span style='%1'>•</span> <strong>Clipboard Write:</strong> %2<br/>").arg(canWriteClipboard(permissions) ? "color: #27ae60;" : "color: #e74c3c;").arg(canWriteClipboard(permissions) ? "Enabled" : "Disabled");
     lines << QString("  <span style='%1'>•</span> <strong>File Upload:</strong> %2<br/>").arg(hasPermission(permissions, FILE_UPLOAD) ? "color: #27ae60;" : "color: #e74c3c;").arg(hasPermission(permissions, FILE_UPLOAD) ? "Enabled" : "Disabled");
     lines << QString("  <span style='%1'>•</span> <strong>File Download:</strong> %2<br/>").arg(hasPermission(permissions, FILE_DOWNLOAD) ? "color: #27ae60;" : "color: #e74c3c;").arg(hasPermission(permissions, FILE_DOWNLOAD) ? "Enabled" : "Disabled");
-    lines << QString("  <span style='%1'>•</span> <strong>Server Commands:</strong> %2").arg(hasPermission(permissions, SERVER_COMMAND) ? "color: #27ae60;" : "color: #e74c3c;").arg(hasPermission(permissions, SERVER_COMMAND) ? "Enabled" : "Disabled");
+    lines << QString("  <span style='%1'>•</span> <strong>Server Commands:</strong> %2").arg(canExecuteServerCommands(permissions) ? "color: #27ae60;" : "color: #e74c3c;").arg(canExecuteServerCommands(permissions) ? "Enabled" : "Disabled");
     lines << "</div>";
     lines << "</div>";
     
@@ -142,9 +179,9 @@ QString ServerPermissions::getDetailedPermissionsHtml(quint32 permissions)
     lines << "<div style='margin-bottom: 0;'>";
     lines << "<h3 style='color: #e67e22; font-size: 14px; font-weight: 600; margin: 0 0 8px 0; border-bottom: 1px solid #bdc3c7; padding-bottom: 4px;'>App Management</h3>";
     lines << QString("<div style='margin-left: 12px; line-height: 1.5;'>");
-    lines << QString("  <span style='%1'>•</span> <strong>List Apps:</strong> %2<br/>").arg(hasPermission(permissions, LIST_APPS) ? "color: #27ae60;" : "color: #e74c3c;").arg(hasPermission(permissions, LIST_APPS) ? "Enabled" : "Disabled");
-    lines << QString("  <span style='%1'>•</span> <strong>View Streams:</strong> %2<br/>").arg((permissions & (VIEW_STREAMS | LIST_APPS)) != 0 ? "color: #27ae60;" : "color: #e74c3c;").arg((permissions & (VIEW_STREAMS | LIST_APPS)) != 0 ? "Enabled" : "Disabled");
-    lines << QString("  <span style='%1'>•</span> <strong>Launch Apps:</strong> %2").arg((permissions & (LAUNCH_APPS | VIEW_STREAMS | LIST_APPS)) != 0 ? "color: #27ae60;" : "color: #e74c3c;").arg((permissions & (LAUNCH_APPS | VIEW_STREAMS | LIST_APPS)) != 0 ? "Enabled" : "Disabled");
+    lines << QString("  <span style='%1'>•</span> <strong>List Apps:</strong> %2<br/>").arg(canListApps(permissions) ? "color: #27ae60;" : "color: #e74c3c;").arg(canListApps(permissions) ? "Enabled" : "Disabled");
+    lines << QString("  <span style='%1'>•</span> <strong>View Streams:</strong> %2<br/>").arg(canViewStreams(permissions) ? "color: #27ae60;" : "color: #e74c3c;").arg(canViewStreams(permissions) ? "Enabled" : "Disabled");
+    lines << QString("  <span style='%1'>•</span> <strong>Launch Apps:</strong> %2").arg(canLaunchApps(permissions) ? "color: #27ae60;" : "color: #e74c3c;").arg(canLaunchApps(permissions) ? "Enabled" : "Disabled");
     lines << "</div>";
     lines << "</div>";
     

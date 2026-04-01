@@ -1,132 +1,114 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.2
+import "ui" as Ui
 
 import ServerCommandManager 1.0
 
-GroupBox {
-    id: serverCommandsGroupBox
-    width: (parent.width - (parent.leftPadding + parent.rightPadding))
-    padding: 12
-    title: "<font color=\"skyblue\">" + qsTr("Server Commands") + "</font>"
-    font.pointSize: 12
+Ui.UiCard {
+    id: serverCommandsCard
+    width: parent.width
+    implicitHeight: contentColumn.implicitHeight + 28
+    height: implicitHeight
+    tone: "inset"
+    cornerRadius: 8
 
     Column {
+        id: contentColumn
         anchors.fill: parent
-        spacing: 10
+        anchors.margins: 14
+        spacing: 12
 
-        // Description
-        Label {
+        Ui.UiSectionHeader {
             width: parent.width
-            text: qsTr("Execute commands on the streaming server during game sessions. Requires Apollo server with command permissions enabled.")
-            font.pointSize: 9
-            wrapMode: Text.Wrap
-            color: "#cccccc"
+            title: qsTr("Server commands")
+            description: qsTr("Execute actions on an Apollo host during a streaming session. Availability depends on the host permission system.")
         }
 
-        // Note about when commands are available
-        Label {
-            width: parent.width
-            text: qsTr("Note: Commands will be available during streaming sessions when connected to Apollo servers.")
-            font.pointSize: 9
-            wrapMode: Text.Wrap
-            color: "#aaaaaa"
-        }
-
-        // Command buttons grid
         GridLayout {
             width: parent.width
             columns: 2
             columnSpacing: 10
-            rowSpacing: 8
+            rowSpacing: 10
 
-            // Restart button
-            Button {
+            Ui.UiButton {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 40
+                Layout.preferredHeight: 44
                 text: qsTr("Restart Server")
-                font.pointSize: 10
                 enabled: ServerCommandManager.hasPermission && !ServerCommandManager.isExecuting
-
                 onClicked: {
                     confirmDialog.commandId = "restart_server"
                     confirmDialog.commandName = qsTr("Restart Server")
-                    confirmDialog.commandDescription = qsTr("This will restart the streaming server. You will be disconnected.")
+                    confirmDialog.commandDescription = qsTr("This restarts the host streaming service and disconnects the current session.")
                     confirmDialog.open()
                 }
             }
 
-            // Shutdown button
-            Button {
+            Ui.UiButton {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 40
+                Layout.preferredHeight: 44
                 text: qsTr("Shutdown Server")
-                font.pointSize: 10
                 enabled: ServerCommandManager.hasPermission && !ServerCommandManager.isExecuting
-
                 onClicked: {
                     confirmDialog.commandId = "shutdown_server"
                     confirmDialog.commandName = qsTr("Shutdown Server")
-                    confirmDialog.commandDescription = qsTr("This will shut down the streaming server. You will be disconnected.")
+                    confirmDialog.commandDescription = qsTr("This shuts down the host computer and disconnects the current session.")
                     confirmDialog.open()
                 }
             }
 
-            // Suspend button
-            Button {
+            Ui.UiButton {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 40
+                Layout.preferredHeight: 44
                 text: qsTr("Suspend Server")
-                font.pointSize: 10
                 enabled: ServerCommandManager.hasPermission && !ServerCommandManager.isExecuting
-
                 onClicked: {
                     confirmDialog.commandId = "suspend_computer"
                     confirmDialog.commandName = qsTr("Suspend Computer")
-                    confirmDialog.commandDescription = qsTr("This will suspend the host computer. You will be disconnected.")
+                    confirmDialog.commandDescription = qsTr("This suspends the host computer and disconnects the current session.")
                     confirmDialog.open()
                 }
             }
 
-            // Custom command button
-            Button {
+            Ui.UiButton {
                 Layout.fillWidth: true
-                Layout.preferredHeight: 40
+                Layout.preferredHeight: 44
                 text: qsTr("Custom Command")
-                font.pointSize: 10
                 enabled: ServerCommandManager.hasPermission && !ServerCommandManager.isExecuting
-
                 onClicked: {
                     customCommandDialog.open()
                 }
             }
         }
 
+        Label {
+            width: parent.width
+            text: qsTr("These controls show up in-session when the active Apollo host exposes them and your client is allowed to execute them.")
+            font.pointSize: 10
+            wrapMode: Text.Wrap
+            color: window ? window.mutedTextColor : "#a1a1aa"
+        }
     }
 
-    // Confirmation dialog
-    Dialog {
+    NavigableDialog {
         id: confirmDialog
-        anchors.centerIn: parent
-        width: Math.min(400, parent.width * 0.9)
-        height: Math.min(200, parent.height * 0.8)
-        
+        width: Math.min(420, parent.width - 48)
+        standardButtons: Dialog.Yes | Dialog.No
+
         property string commandId: ""
         property string commandName: ""
         property string commandDescription: ""
 
-        title: qsTr("Confirm Command")
-        modal: true
-
         Column {
-            anchors.fill: parent
-            spacing: 15
+            spacing: 12
+            width: parent.width
 
             Label {
                 width: parent.width
                 text: confirmDialog.commandName
                 font.pointSize: 14
                 font.bold: true
+                color: window ? window.textColor : "#fafafa"
                 wrapMode: Text.Wrap
             }
 
@@ -134,63 +116,47 @@ GroupBox {
                 width: parent.width
                 text: confirmDialog.commandDescription
                 font.pointSize: 11
-                wrapMode: Text.Wrap
-                color: "#cccccc"
-            }
-
-            Label {
-                width: parent.width
-                text: qsTr("Are you sure you want to continue?")
-                font.pointSize: 11
+                color: window ? window.mutedTextColor : "#a1a1aa"
                 wrapMode: Text.Wrap
             }
         }
-
-        standardButtons: Dialog.Yes | Dialog.No
 
         onAccepted: {
             ServerCommandManager.executeCommand(commandId)
         }
     }
 
-    // Custom command dialog
-    Dialog {
+    NavigableDialog {
         id: customCommandDialog
-        anchors.centerIn: parent
-        width: Math.min(400, parent.width * 0.9)
-        height: Math.min(250, parent.height * 0.8)
-
-        title: qsTr("Custom Command")
-        modal: true
+        width: Math.min(420, parent.width - 48)
+        standardButtons: Dialog.Ok | Dialog.Cancel
 
         Column {
-            anchors.fill: parent
-            spacing: 15
+            spacing: 12
+            width: parent.width
 
             Label {
                 width: parent.width
-                text: qsTr("Enter a custom command to execute on the server:")
+                text: qsTr("Enter a custom command to execute on the host.")
                 font.pointSize: 11
+                color: window ? window.textColor : "#fafafa"
                 wrapMode: Text.Wrap
             }
 
-            TextField {
+            Ui.UiInput {
                 id: customCommandField
                 width: parent.width
-                placeholderText: qsTr("e.g., custom-script.sh")
-                font.pointSize: 11
+                placeholderText: qsTr("custom-script.sh")
             }
 
             Label {
                 width: parent.width
-                text: qsTr("Warning: Only execute commands you trust. Custom commands may have different security implications.")
-                font.pointSize: 9
+                text: qsTr("Only execute commands you trust. Custom commands may be disabled or handled differently by the host.")
+                font.pointSize: 10
+                color: window ? window.mutedTextColor : "#a1a1aa"
                 wrapMode: Text.Wrap
-                color: "#FFC107"
             }
         }
-
-        standardButtons: Dialog.Ok | Dialog.Cancel
 
         onAccepted: {
             if (customCommandField.text.trim() !== "") {
@@ -204,7 +170,6 @@ GroupBox {
         }
     }
 
-    // Connect to signals
     Connections {
         target: ServerCommandManager
 
@@ -224,24 +189,26 @@ GroupBox {
         }
     }
 
-    // Toast notifications (simplified - would need proper toast component)
     Rectangle {
         id: successToast
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(300, parent.width * 0.8)
-        height: 40
-        color: "#4CAF50"
-        radius: 5
+        width: Math.min(320, parent.width * 0.85)
+        height: 42
+        radius: 6
+        color: window ? window.surfaceMutedColor : "#1c1c21"
+        border.width: 1
+        border.color: window ? window.borderStrongColor : "#3f3f46"
         visible: false
-        
+
         property string text: ""
 
         Label {
             anchors.centerIn: parent
             text: successToast.text
-            color: "white"
+            color: window ? window.textColor : "#fafafa"
             font.pointSize: 10
+            horizontalAlignment: Text.AlignHCenter
         }
 
         function show() {
@@ -260,19 +227,22 @@ GroupBox {
         id: errorToast
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(300, parent.width * 0.8)
-        height: 40
-        color: "#F44336"
-        radius: 5
+        width: Math.min(320, parent.width * 0.85)
+        height: 42
+        radius: 6
+        color: window ? window.surfaceMutedColor : "#1c1c21"
+        border.width: 1
+        border.color: window ? window.borderStrongColor : "#3f3f46"
         visible: false
-        
+
         property string text: ""
 
         Label {
             anchors.centerIn: parent
             text: errorToast.text
-            color: "white"
+            color: window ? window.textColor : "#fafafa"
             font.pointSize: 10
+            horizontalAlignment: Text.AlignHCenter
         }
 
         function show() {
@@ -282,7 +252,7 @@ GroupBox {
 
         Timer {
             id: errorHideTimer
-            interval: 5000
+            interval: 3500
             onTriggered: errorToast.visible = false
         }
     }

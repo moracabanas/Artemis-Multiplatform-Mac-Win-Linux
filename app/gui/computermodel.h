@@ -17,7 +17,9 @@ class ComputerModel : public QAbstractListModel
         StatusUnknownRole,
         ServerSupportedRole,
         DetailsRole,
-        ApolloVersionRole
+        ApolloVersionRole,
+        ApolloHostRole,
+        ServerPermissionsRole
     };
 
 public:

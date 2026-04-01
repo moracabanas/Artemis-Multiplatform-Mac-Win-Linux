@@ -1,5 +1,6 @@
 import QtQuick 2.0
 import QtQuick.Controls 2.2
+import "ui" as Ui
 
 import ComputerManager 1.0
 import Session 1.0
@@ -54,22 +55,40 @@ Item {
         ComputerManager.quitAppCompleted.disconnect(quitAppCompleted)
     }
 
-    Row {
+    Ui.UiCard {
         anchors.centerIn: parent
-        spacing: 5
+        width: Math.min(parent.width - 48, 520)
+        implicitHeight: quitColumn.implicitHeight + 36
+        height: implicitHeight
+        tone: "raised"
+        cornerRadius: 8
 
-        BusyIndicator {
-            id: stageSpinner
-        }
+        Column {
+            id: quitColumn
+            anchors.fill: parent
+            anchors.margins: 18
+            spacing: 16
 
-        Label {
-            id: stageLabel
-            height: stageSpinner.height
-            text: stageText
-            font.pointSize: 20
-            verticalAlignment: Text.AlignVCenter
+            Row {
+                spacing: 12
 
-            wrapMode: Text.Wrap
+                Item {
+                    width: 24
+                    height: 24
+
+                    BusyIndicator {
+                        id: stageSpinner
+                        anchors.fill: parent
+                    }
+                }
+
+                Ui.UiSectionHeader {
+                    width: parent.width - 48
+                    eyebrow: qsTr("SESSION")
+                    title: stageText
+                    description: qsTr("Artemis is closing the active stream before returning to the application browser.")
+                }
+            }
         }
     }
 

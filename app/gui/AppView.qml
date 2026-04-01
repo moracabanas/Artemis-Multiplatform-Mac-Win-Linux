@@ -1,6 +1,7 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
-import QtQuick.Controls.Material 2.2
+import QtQuick.Layouts 1.3
+import "ui" as Ui
 
 import AppModel 1.0
 import ComputerManager 1.0
@@ -12,13 +13,74 @@ CenteredGridView {
     property bool activated
     property bool showHiddenGames
     property bool showGames
+    property color cardColor: window ? window.surfaceColor : "#18181b"
+    property color cardBorderColor: window ? window.borderColor : "#2f2f35"
+    property color accentColor: window ? window.accentColor : "#fafafa"
 
     id: appGrid
     focus: true
     activeFocusOnTab: true
-    topMargin: 20
-    bottomMargin: 5
-    cellWidth: 230; cellHeight: 297;
+    topMargin: 12
+    bottomMargin: 8
+    cellWidth: 256
+    cellHeight: 228
+
+    function appStateText(running, hidden, directLaunch) {
+        if (running) {
+            return qsTr("Running")
+        }
+        if (hidden) {
+            return qsTr("Hidden")
+        }
+        if (directLaunch) {
+            return qsTr("Direct launch")
+        }
+        return qsTr("Ready")
+    }
+
+    function appStateColor(running, hidden, directLaunch) {
+        if (running) {
+            return "#fafafa"
+        }
+        if (hidden) {
+            return "#27272a"
+        }
+        if (directLaunch) {
+            return "#e4e4e7"
+        }
+        return "#111113"
+    }
+
+    function appStateTextColor(running, hidden, directLaunch) {
+        if (running || directLaunch) {
+            return "#09090b"
+        }
+
+        return "#fafafa"
+    }
+
+    function appSummary(running, hidden, directLaunch) {
+        if (running) {
+            return qsTr("Resume the current session or quit it before launching something else.")
+        }
+        if (hidden) {
+            return qsTr("Hidden from the normal grid. Use the context menu to unhide it.")
+        }
+        if (directLaunch) {
+            return qsTr("Configured to launch immediately when this host is selected.")
+        }
+        return qsTr("Launch this app on the selected host.")
+    }
+
+    function actionText(running) {
+        return running ? qsTr("Open actions to resume or quit") : qsTr("Click to launch")
+    }
+
+    function showLaunchPermissionDialog() {
+        launchPermissionDialog.text = appModel.launchPermissionErrorText()
+        launchPermissionDialog.helpText = qsTr("Use Help to open Apollo's permission guide.")
+        launchPermissionDialog.open()
+    }
 
     function computerLost()
     {
@@ -71,145 +133,137 @@ CenteredGridView {
     model: appModel
 
     delegate: NavigableItemDelegate {
-        width: 220; height: 287;
+        id: appDelegate
+        width: 240
+        height: 220
         grid: appGrid
+        hoverEnabled: true
 
         property alias appContextMenu: appContextMenuLoader.item
-        property alias appNameText: appNameTextLoader.item
 
         // Dim the app if it's hidden
-        opacity: model.hidden ? 0.4 : 1.0
+        opacity: model.hidden ? 0.78 : 1.0
 
-        Image {
-            property bool isPlaceholder: false
-
-            id: appIcon
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 10
-            source: model.boxart
-
-            onSourceSizeChanged: {
-                // Nearly all of Nvidia's official box art does not match the dimensions of placeholder
-                // images, however the one known exception is Overcooked. Therefore, we only execute
-                // the image size checks if this is not an app collector game. We know the officially
-                // supported games all have box art, so this check is not required.
-                if (!model.isAppCollectorGame &&
-                    ((sourceSize.width == 130 && sourceSize.height == 180) || // GFE 2.0 placeholder image
-                     (sourceSize.width == 628 && sourceSize.height == 888) || // GFE 3.0 placeholder image
-                     (sourceSize.width == 200 && sourceSize.height == 266)))  // Our no_app_image.png
-                {
-                    isPlaceholder = true
-                }
-                else
-                {
-                    isPlaceholder = false
-                }
-
-                width = 200
-                height = 267
-            }
-
-            // Display a tooltip with the full name if it's truncated
-            ToolTip.text: model.name
-            ToolTip.delay: 1000
-            ToolTip.timeout: 5000
-            ToolTip.visible: (parent.hovered || parent.highlighted) && (!appNameText || appNameText.truncated)
+        background: Ui.UiCard {
+            cornerRadius: 8
+            border.width: highlighted ? 2 : 1
+            border.color: highlighted ? appGrid.accentColor : appGrid.cardBorderColor
+            color: highlighted ? (window ? window.elevatedSurfaceColor : "#151518")
+                               : (window ? window.surfaceColor : "#111113")
         }
 
-        Loader {
-            active: model.running
-            asynchronous: true
-            anchors.fill: appIcon
+        contentItem: ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 14
+            spacing: 12
 
-            sourceComponent: Item {
-                RoundButton {
-                    anchors.horizontalCenterOffset: appIcon.isPlaceholder ? -47 : 0
-                    anchors.verticalCenterOffset: appIcon.isPlaceholder ? -75 : -60
-                    anchors.centerIn: parent
-                    implicitWidth: 85
-                    implicitHeight: 85
+            Row {
+                Layout.fillWidth: true
+                spacing: 8
 
-                    Image {
-                        source: "qrc:/res/play_arrow_FILL1_wght700_GRAD200_opsz48.svg"
-                        anchors.centerIn: parent
-                        sourceSize {
-                            width: 75
-                            height: 75
-                        }
-                    }
-
-                    onClicked: {
-                        launchOrResumeSelectedApp(true)
-                    }
-
-                    ToolTip.text: qsTr("Resume Game")
-                    ToolTip.delay: 1000
-                    ToolTip.timeout: 3000
-                    ToolTip.visible: hovered
-
-                    Material.background: "#D0808080"
+                Ui.UiBadge {
+                    text: appGrid.appStateText(model.running, model.hidden, model.directLaunch)
+                    tone: model.running || model.directLaunch ? "strong" : "default"
                 }
 
-                RoundButton {
-                    anchors.horizontalCenterOffset: appIcon.isPlaceholder ? 47 : 0
-                    anchors.verticalCenterOffset: appIcon.isPlaceholder ? -75 : 60
-                    anchors.centerIn: parent
-                    implicitWidth: 85
-                    implicitHeight: 85
-
-                    Image {
-                        source: "qrc:/res/stop_FILL1_wght700_GRAD200_opsz48.svg"
-                        anchors.centerIn: parent
-                        sourceSize {
-                            width: 75
-                            height: 75
-                        }
-                    }
-
-                    onClicked: {
-                        doQuitGame()
-                    }
-
-                    ToolTip.text: qsTr("Quit Game")
-                    ToolTip.delay: 1000
-                    ToolTip.timeout: 3000
-                    ToolTip.visible: hovered
-
-                    Material.background: "#D0808080"
+                Ui.UiBadge {
+                    visible: model.directLaunch && !model.running
+                    text: qsTr("Quick launch")
                 }
             }
-        }
 
-        Loader {
-            id: appNameTextLoader
-            active: appIcon.isPlaceholder
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 12
 
-            // This loader is not asynchronous to avoid noticeable differences
-            // in the time in which the text loads for each game.
+                Rectangle {
+                    Layout.preferredWidth: 42
+                    Layout.preferredHeight: 42
+                    radius: 6
+                    color: window ? window.surfaceInsetColor : "#0d0d10"
+                    border.width: 1
+                    border.color: window ? window.borderColor : "#27272a"
 
-            width: appIcon.width
-            height: model.running ? 175 : appIcon.height
+                    Ui.UiIcon {
+                        anchors.centerIn: parent
+                        source: model.running ? "qrc:/res/lucide/power.svg" : "qrc:/res/lucide/gamepad-2.svg"
+                        iconSize: 18
+                    }
+                }
 
-            anchors.left: appIcon.left
-            anchors.right: appIcon.right
-            anchors.bottom: appIcon.bottom
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 3
 
-            sourceComponent: Label {
-                id: appNameText
-                text: model.name
-                font.pointSize: 22
-                leftPadding: 20
-                rightPadding: 20
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignHCenter
+                    Label {
+                        id: appNameText
+                        Layout.fillWidth: true
+                        text: model.name
+                        color: window ? window.textColor : "white"
+                        font.pointSize: 16
+                        font.bold: true
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: model.running
+                              ? qsTr("Resume the existing session or quit it before launching something else.")
+                              : (model.hidden
+                                 ? qsTr("Hidden from the default grid.")
+                                 : (model.directLaunch
+                                    ? qsTr("Launches immediately when the host opens.")
+                                    : qsTr("Ready to launch on the selected host.")))
+                        color: window ? window.mutedTextColor : "#a1a1aa"
+                        font.pointSize: 10
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: appGrid.appSummary(model.running, model.hidden, model.directLaunch)
+                color: window ? window.mutedTextColor : "#a1a1aa"
                 wrapMode: Text.Wrap
-                elide: Text.ElideRight
+            }
+
+            Item {
+                Layout.fillHeight: true
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: model.running
+
+                Ui.UiButton {
+                    Layout.fillWidth: true
+                    text: qsTr("Resume")
+                    onClicked: launchOrResumeSelectedApp(true)
+                }
+
+                Ui.UiButton {
+                    Layout.fillWidth: true
+                    text: qsTr("Quit")
+                    tone: "muted"
+                    onClicked: doQuitGame()
+                }
             }
         }
 
         function launchOrResumeSelectedApp(quitExistingApp)
         {
             var runningId = appModel.getRunningAppId()
+            var isResume = runningId === model.appid
+
+            if (!isResume && appModel.isApolloHost() && !appModel.hasLaunchAppPermission()) {
+                appGrid.showLaunchPermissionDialog()
+                return
+            }
+
             if (runningId !== 0 && runningId !== model.appid) {
                 if (quitExistingApp) {
                     quitAppDialog.appName = appModel.getRunningAppName()
@@ -226,16 +280,12 @@ CenteredGridView {
             var segue = component.createObject(stackView, {
                                                    "appName": model.name,
                                                    "session": appModel.createSessionForApp(index),
-                                                   "isResume": runningId === model.appid
+                                                   "isResume": isResume
                                                })
             stackView.push(segue)
         }
 
         onClicked: {
-            // Only allow clicking on the box art for non-running games.
-            // For running games, buttons will appear to resume or quit which
-            // will handle starting the game and clicks on the box art will
-            // be ignored.
             if (!model.running) {
                 launchOrResumeSelectedApp(true)
             }
@@ -339,17 +389,13 @@ CenteredGridView {
         }
     }
 
-    Row {
+    Ui.UiEmptyState {
         anchors.centerIn: parent
-        spacing: 5
+        width: Math.min(appGrid.width - 32, 560)
         visible: appGrid.count === 0
-
-        Label {
-            text: qsTr("This computer doesn't seem to have any applications or some applications are hidden")
-            font.pointSize: 20
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.Wrap
-        }
+        iconSource: "qrc:/res/lucide/gamepad-2.svg"
+        title: qsTr("No applications are available on this host")
+        body: qsTr("The host may not have any exported apps yet, or some apps are currently hidden. Open the host actions menu if you need to view hidden apps.")
     }
 
     NavigableMessageDialog {
@@ -379,6 +425,11 @@ CenteredGridView {
         }
 
         onAccepted: quitApp()
+    }
+
+    ErrorMessageDialog {
+        id: launchPermissionDialog
+        helpUrl: "https://github.com/ClassicOldSong/Apollo/wiki/Permission-System"
     }
 
     ScrollBar.vertical: ScrollBar {}

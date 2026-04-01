@@ -1,61 +1,67 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.2
+import "ui" as Ui
 
 import ClipboardManager 1.0
 
-GroupBox {
-    id: clipboardSettingsGroupBox
-    width: (parent.width - (parent.leftPadding + parent.rightPadding))
-    padding: 12
-    title: "<font color=\"skyblue\">" + qsTr("Clipboard Sync") + "</font>"
-    font.pointSize: 12
+Ui.UiCard {
+    id: clipboardSettingsCard
+    width: parent.width
+    implicitHeight: contentColumn.implicitHeight + 28
+    height: implicitHeight
+    tone: "inset"
+    cornerRadius: 8
 
     Column {
+        id: contentColumn
         anchors.fill: parent
-        spacing: 8
+        anchors.margins: 14
+        spacing: 12
 
-        // Main toggle
-        Row {
-            spacing: 10
+        Ui.UiSectionHeader {
             width: parent.width
+            title: qsTr("Clipboard sync")
+            description: qsTr("Synchronize clipboard content between your device and the streaming server. Requires an Apollo host with clipboard permissions.")
+        }
 
-            CheckBox {
-                id: enableClipboardSync
-                text: qsTr("Enable clipboard synchronization")
-                font.pointSize: 12
-                checked: ClipboardManager.isEnabled
-                onCheckedChanged: {
-                    ClipboardManager.isEnabled = checked
-                }
+        Ui.UiToggle {
+            id: enableClipboardSync
+            text: qsTr("Enable clipboard synchronization")
+            font.pointSize: 12
+            checked: ClipboardManager.isEnabled
+            onCheckedChanged: {
+                ClipboardManager.isEnabled = checked
             }
         }
 
-        // Description
-        Label {
+        Ui.UiCard {
             width: parent.width
-            text: qsTr("Synchronize clipboard content between your device and the streaming server. Requires Apollo server.")
-            font.pointSize: 9
-            wrapMode: Text.Wrap
-            color: "#cccccc"
-        }
-
-        // Content filtering section
-        GroupBox {
-            width: parent.width
-            title: qsTr("Content Filtering")
-            font.pointSize: 10
+            implicitHeight: filteringColumn.implicitHeight + 24
+            height: implicitHeight
+            tone: "surface"
+            cornerRadius: 6
             enabled: enableClipboardSync.checked
-            clip: true
+            opacity: enabled ? 1.0 : 0.55
 
             Column {
+                id: filteringColumn
                 anchors.fill: parent
+                anchors.margins: 12
                 spacing: 8
 
-                CheckBox {
+                Label {
+                    width: parent.width
+                    text: qsTr("Filtering")
+                    font.pointSize: 11
+                    font.bold: true
+                    color: window ? window.textColor : "#fafafa"
+                }
+
+                Ui.UiToggle {
                     id: textOnlyFilter
                     text: qsTr("Text content only")
-                    font.pointSize: 10
+                    font.pointSize: 11
                     checked: ClipboardManager.textOnlyMode
                     onCheckedChanged: {
                         ClipboardManager.textOnlyMode = checked
@@ -64,10 +70,10 @@ GroupBox {
 
                 Label {
                     width: parent.width
-                    text: qsTr("Only sync text content, ignore images and files")
-                    font.pointSize: 8
+                    text: qsTr("Only sync text content and ignore images or files.")
+                    font.pointSize: 10
                     wrapMode: Text.Wrap
-                    color: "#aaaaaa"
+                    color: window ? window.mutedTextColor : "#a1a1aa"
                 }
 
                 Row {
@@ -75,50 +81,59 @@ GroupBox {
                     width: parent.width
 
                     Label {
-                        text: qsTr("Max content size:")
-                        font.pointSize: 10
+                        text: qsTr("Max content size")
+                        font.pointSize: 11
+                        color: window ? window.textColor : "#fafafa"
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
-                    Row {
-                        spacing: 5
-                        
-                        SpinBox {
-                            id: maxSizeSpinBox
-                            from: 1
-                            to: 100
-                            value: ClipboardManager.maxContentSizeMB
-                            onValueChanged: {
-                                ClipboardManager.maxContentSizeMB = value
-                            }
+                    Ui.UiSpinBox {
+                        id: maxSizeSpinBox
+                        from: 1
+                        to: 100
+                        value: ClipboardManager.maxContentSizeMB
+                        onValueChanged: {
+                            ClipboardManager.maxContentSizeMB = value
                         }
-                        
-                        Label {
-                            text: "MB"
-                            anchors.verticalCenter: parent.verticalCenter
-                            font.pointSize: 12
-                        }
+                    }
+
+                    Label {
+                        text: "MB"
+                        anchors.verticalCenter: parent.verticalCenter
+                        font.pointSize: 11
+                        color: window ? window.mutedTextColor : "#a1a1aa"
                     }
                 }
             }
         }
 
-        // Privacy section
-        GroupBox {
+        Ui.UiCard {
             width: parent.width
-            title: qsTr("Privacy")
-            font.pointSize: 10
+            implicitHeight: privacyColumn.implicitHeight + 24
+            height: implicitHeight
+            tone: "surface"
+            cornerRadius: 6
             enabled: enableClipboardSync.checked
-            clip: true
+            opacity: enabled ? 1.0 : 0.55
 
             Column {
+                id: privacyColumn
                 anchors.fill: parent
+                anchors.margins: 12
                 spacing: 8
 
-                CheckBox {
+                Label {
+                    width: parent.width
+                    text: qsTr("Notifications")
+                    font.pointSize: 11
+                    font.bold: true
+                    color: window ? window.textColor : "#fafafa"
+                }
+
+                Ui.UiToggle {
                     id: showNotifications
                     text: qsTr("Show sync notifications")
-                    font.pointSize: 10
+                    font.pointSize: 11
                     checked: ClipboardManager.showNotifications
                     onCheckedChanged: {
                         ClipboardManager.showNotifications = checked
@@ -127,21 +142,20 @@ GroupBox {
 
                 Label {
                     width: parent.width
-                    text: qsTr("Display toast notifications when clipboard content is synchronized")
-                    font.pointSize: 8
+                    text: qsTr("Display a toast when clipboard content is uploaded or fetched during a session.")
+                    font.pointSize: 10
                     wrapMode: Text.Wrap
-                    color: "#aaaaaa"
+                    color: window ? window.mutedTextColor : "#a1a1aa"
                 }
             }
         }
 
-        // Note about when sync is active
         Label {
             width: parent.width
-            text: qsTr("Note: Clipboard sync will be active during game streaming sessions when connected to Apollo servers.")
-            font.pointSize: 9
+            text: qsTr("Clipboard sync is only active during streaming sessions and only when the selected Apollo host grants clipboard access.")
+            font.pointSize: 10
             wrapMode: Text.Wrap
-            color: "#aaaaaa"
+            color: window ? window.mutedTextColor : "#a1a1aa"
             visible: enableClipboardSync.checked
         }
     }

@@ -55,6 +55,20 @@ public:
      * @return true if permission is enabled
      */
     Q_INVOKABLE static bool hasPermission(quint32 permissions, PermissionFlags flag);
+
+    Q_INVOKABLE static bool canListApps(quint32 permissions);
+
+    Q_INVOKABLE static bool canViewStreams(quint32 permissions);
+
+    Q_INVOKABLE static bool canLaunchApps(quint32 permissions);
+
+    Q_INVOKABLE static bool canReadClipboard(quint32 permissions);
+
+    Q_INVOKABLE static bool canWriteClipboard(quint32 permissions);
+
+    Q_INVOKABLE static bool canAccessClipboard(quint32 permissions);
+
+    Q_INVOKABLE static bool canExecuteServerCommands(quint32 permissions);
     
     /**
      * @brief Get a human-readable permissions string

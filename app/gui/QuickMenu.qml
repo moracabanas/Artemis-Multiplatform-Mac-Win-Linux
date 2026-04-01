@@ -1,103 +1,287 @@
 import QtQuick 2.9
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.2
+import "ui" as Ui
+
 import ServerCommandManager 1.0
 
-Rectangle {
+Ui.UiCard {
     id: quickMenu
-    // Fixed size for the menu - small and centered
-    width: 500
-    height: 400
-    // Don't use anchors with SizeViewToRootObject - position manually
-    color: "#2d2d2d"
-    radius: 10
-    border.color: "#444"
-    border.width: 1
-    visible: true  // Always visible when created
+    width: 560
+    height: 440
+    tone: "raised"
+    cornerRadius: 8
+    visible: true
     opacity: 1.0
-    
-    // Menu state management
-    property string currentMenu: "main"  // "main" or "server_commands"
-    
-    // Toast notification system
+    focus: visible
+
+    property string currentMenu: "main"
     property string toastMessage: ""
     property bool showToast: false
 
-    // Server command data model
-    ListModel {        id: serverCommandsModel    }
-    
-    // Animation for smooth show/hide
-    Behavior on opacity {
-        NumberAnimation { duration: 200 }
+    ListModel {
+        id: serverCommandsModel
     }
-    
-    // Handle keyboard input for navigation
+
+    ListModel {
+        id: mainMenuModel
+
+        ListElement {
+            text: qsTr("Disconnect")
+            iconSource: "qrc:/res/lucide/square.svg"
+            action: "disconnect"
+            description: qsTr("Disconnect from the current host session")
+        }
+        ListElement {
+            text: qsTr("Quit")
+            iconSource: "qrc:/res/lucide/power.svg"
+            action: "quit"
+            description: qsTr("Close the current streaming session")
+        }
+        ListElement {
+            text: qsTr("Server Commands")
+            iconSource: "qrc:/res/lucide/server.svg"
+            action: "server_commands"
+            description: qsTr("Open Apollo power and automation controls")
+        }
+        ListElement {
+            text: qsTr("Clipboard Upload")
+            iconSource: "qrc:/res/lucide/upload.svg"
+            action: "clipboard_upload"
+            description: qsTr("Send clipboard contents to the host")
+        }
+        ListElement {
+            text: qsTr("Fetch Clipboard")
+            iconSource: "qrc:/res/lucide/download.svg"
+            action: "clipboard_fetch"
+            description: qsTr("Fetch the current clipboard from the host")
+        }
+        ListElement {
+            text: qsTr("Toggle Performance Stats")
+            iconSource: "qrc:/res/lucide/activity.svg"
+            action: "toggle_stats"
+            description: qsTr("Show or hide the streaming performance overlay")
+        }
+        ListElement {
+            text: qsTr("Toggle Mouse Capture")
+            iconSource: "qrc:/res/lucide/mouse-pointer-2.svg"
+            action: "toggle_mouse"
+            description: qsTr("Switch the current mouse capture mode")
+        }
+        ListElement {
+            text: qsTr("Toggle Keyboard Capture")
+            iconSource: "qrc:/res/lucide/keyboard.svg"
+            action: "toggle_keyboard"
+            description: qsTr("Switch how keyboard shortcuts are captured")
+        }
+        ListElement {
+            text: qsTr("Toggle Fullscreen")
+            iconSource: "qrc:/res/lucide/maximize.svg"
+            action: "toggle_fullscreen"
+            description: qsTr("Toggle fullscreen for the current stream")
+        }
+    }
+
+    Behavior on opacity {
+        NumberAnimation { duration: 160 }
+    }
+
+    onCurrentMenuChanged: {
+        menuListView.currentIndex = 0
+    }
+
+    function panelTitle() {
+        return currentMenu === "main" ? qsTr("Quick Menu") : qsTr("Server Commands")
+    }
+
+    function panelDescription() {
+        return currentMenu === "main"
+                ? qsTr("Session controls, clipboard tools, and capture toggles.")
+                : qsTr("Apollo host actions exposed to this client during the current session.")
+    }
+
+    function panelIcon() {
+        return currentMenu === "main" ? "qrc:/res/lucide/gamepad-2.svg" : "qrc:/res/lucide/server.svg"
+    }
+
+    function commandIcon(commandId) {
+        var normalized = commandId.toLowerCase()
+        if (normalized.indexOf("shutdown") >= 0) {
+            return "qrc:/res/lucide/power.svg"
+        }
+        if (normalized.indexOf("restart") >= 0) {
+            return "qrc:/res/lucide/refresh-cw.svg"
+        }
+        if (normalized.indexOf("suspend") >= 0 || normalized.indexOf("sleep") >= 0) {
+            return "qrc:/res/lucide/moon.svg"
+        }
+        return "qrc:/res/lucide/server.svg"
+    }
+
+    function closeMenuDelayed() {
+        closeTimer.restart()
+    }
+
+    function closeMenu() {
+        if (typeof quickMenuManager !== "undefined") {
+            showActionFeedback(qsTr("Closing menu..."))
+            quickMenuManager.hide()
+        }
+    }
+
+    function executeCurrentItem() {
+        var currentItem = menuListView.model.get(menuListView.currentIndex)
+        if (currentItem) {
+            executeAction(currentItem.action)
+        }
+    }
+
+    function executeAction(action) {
+        if (action === "server_commands") {
+            if (quickMenuManager.serverCommandManager && quickMenuManager.serverCommandManager.hasPermission) {
+                currentMenu = "server_commands"
+            }
+            else {
+                showActionFeedback(qsTr("Server commands are not available for this session."))
+                closeMenuDelayed()
+            }
+            return
+        }
+
+        for (var i = 0; i < serverCommandsModel.count; i++) {
+            if (serverCommandsModel.get(i).action === action) {
+                if (quickMenuManager.serverCommandManager) {
+                    quickMenuManager.serverCommandManager.executeCommand(action)
+                    closeMenuDelayed()
+                }
+                return
+            }
+        }
+
+        showActionFeedback(messageForAction(action))
+        if (typeof quickMenuManager !== "undefined") {
+            quickMenuManager.executeAction(action)
+        }
+        closeMenuDelayed()
+    }
+
+    function messageForAction(action) {
+        switch (action) {
+        case "disconnect":
+            return qsTr("Disconnecting from the current host...")
+        case "quit":
+            return qsTr("Quitting the current session...")
+        case "clipboard_upload":
+            return qsTr("Uploading clipboard to the host...")
+        case "clipboard_fetch":
+            return qsTr("Fetching clipboard from the host...")
+        case "toggle_stats":
+            return qsTr("Toggling performance stats...")
+        case "toggle_mouse":
+            return qsTr("Switching mouse capture mode...")
+        case "toggle_keyboard":
+            return qsTr("Switching keyboard capture mode...")
+        case "toggle_fullscreen":
+            return qsTr("Toggling fullscreen...")
+        default:
+            return qsTr("Executing action...")
+        }
+    }
+
+    function showActionFeedback(message) {
+        toastMessage = message
+        showToast = true
+        toastTimer.restart()
+    }
+
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape) {
             closeMenu()
-        } else if (event.key === Qt.Key_Up) {
+        }
+        else if (event.key === Qt.Key_Up) {
             menuListView.decrementCurrentIndex()
-        } else if (event.key === Qt.Key_Down) {
+        }
+        else if (event.key === Qt.Key_Down) {
             menuListView.incrementCurrentIndex()
-        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+        }
+        else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             executeCurrentItem()
         }
     }
-    
-    // Menu content (no longer nested in another rectangle)
+
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 20
-        spacing: 15
+        anchors.margins: 18
+        spacing: 14
 
-        // Title
-        Text {
-            text: currentMenu === "main" ? qsTr("Quick Menu") : qsTr("Server Commands")
-            font.pointSize: 24
-            font.bold: true
-            color: "#00cccc"
-            Layout.alignment: Qt.AlignHCenter
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
+
+            Ui.UiCard {
+                Layout.preferredWidth: 40
+                Layout.preferredHeight: 40
+                tone: "inset"
+                cornerRadius: 6
+
+                Ui.UiIcon {
+                    anchors.centerIn: parent
+                    source: panelIcon()
+                    iconSize: 18
+                }
+            }
+
+            Ui.UiSectionHeader {
+                Layout.fillWidth: true
+                eyebrow: currentMenu === "main" ? qsTr("SESSION") : qsTr("APOLLO")
+                title: panelTitle()
+                description: panelDescription()
+            }
         }
 
-        // Menu items
         ListView {
             id: menuListView
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: !(currentMenu === "server_commands" && serverCommandsModel.count === 0)
             focus: true
-            
+            clip: true
+            spacing: 8
+            currentIndex: 0
             model: currentMenu === "main" ? mainMenuModel : serverCommandsModel
-            
+
             delegate: Button {
                 width: menuListView.width
-                height: 60
+                height: 72
                 flat: true
 
-                background: Rectangle {
-                    color: parent.down ? "#333" : (parent.hovered ? "#444" : "transparent")
-                    border.color: parent.hovered ? "#00cccc" : "transparent"
-                    border.width: 2
-                    radius: 5
+                background: Ui.UiCard {
+                    tone: (parent.down || parent.hovered || menuListView.currentIndex === index) ? "muted" : "surface"
+                    cornerRadius: 6
+                    border.width: menuListView.currentIndex === index ? 2 : 1
+                    border.color: menuListView.currentIndex === index
+                                  ? (window ? window.accentColor : "#fafafa")
+                                  : (window ? window.borderColor : "#27272a")
                 }
 
-                onClicked: {
-                    executeAction(model.action)
-                }
+                onClicked: executeAction(model.action)
 
                 contentItem: RowLayout {
                     anchors.fill: parent
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.margins: 15
-                    spacing: 15
+                    anchors.margins: 12
+                    spacing: 12
 
-                    Text {
-                        text: model.icon
-                        font.pointSize: 20
-                        color: "white"
-                        Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
-                        Layout.preferredWidth: 40
+                    Ui.UiCard {
+                        Layout.preferredWidth: 44
+                        Layout.preferredHeight: 44
+                        tone: "inset"
+                        cornerRadius: 6
+
+                        Ui.UiIcon {
+                            anchors.centerIn: parent
+                            source: model.iconSource
+                            iconSize: 18
+                        }
                     }
 
                     ColumnLayout {
@@ -105,283 +289,121 @@ Rectangle {
                         Layout.alignment: Qt.AlignVCenter
                         spacing: 2
 
-                        Text {
+                        Label {
                             text: model.text
-                            font.pointSize: 14
+                            color: window ? window.textColor : "#fafafa"
+                            font.pointSize: 13
                             font.bold: true
-                            color: "white"
                         }
 
-                        Text {
+                        Label {
                             text: model.description
+                            color: window ? window.mutedTextColor : "#a1a1aa"
                             font.pointSize: 10
-                            color: "#cccccc"
+                            wrapMode: Text.Wrap
                         }
                     }
                 }
             }
         }
 
-        // Back/Close button
-        Button {
-            text: currentMenu === "main" ? qsTr("Close (Esc)") : qsTr("← Back")
-            Layout.alignment: Qt.AlignHCenter
-            onClicked: {
-                if (currentMenu === "main") {
-                    closeMenu()
-                } else {
-                    currentMenu = "main"
+        Ui.UiEmptyState {
+            Layout.fillWidth: true
+            visible: currentMenu === "server_commands" && serverCommandsModel.count === 0
+            iconSource: "qrc:/res/lucide/server.svg"
+            title: qsTr("No server commands exposed")
+            body: qsTr("This Apollo host has not exposed server-side actions to the current client or the session does not have permission to execute them.")
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+
+            Ui.UiButton {
+                id: closeButton
+                text: currentMenu === "main" ? qsTr("Close") : qsTr("Back")
+                tone: "muted"
+                Layout.alignment: Qt.AlignLeft
+                onClicked: {
+                    if (currentMenu === "main") {
+                        closeMenu()
+                    }
+                    else {
+                        currentMenu = "main"
+                    }
                 }
+            }
+
+            Item {
+                Layout.fillWidth: true
+            }
+
+            Label {
+                text: currentMenu === "main" ? qsTr("Esc") : qsTr("Enter to run")
+                color: window ? window.subtleTextColor : "#71717a"
+                font.pointSize: 10
+                Layout.alignment: Qt.AlignVCenter
             }
         }
     }
-    
-    // Toast notification overlay
-    Rectangle {
+
+    Ui.UiCard {
         id: toastNotification
         anchors.bottom: parent.bottom
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottomMargin: 20
-        width: Math.min(parent.width - 40, toastText.implicitWidth + 20)
-        height: 40
-        radius: 20
-        color: "#333"
-        border.color: "#666"
-        border.width: 1
+        anchors.bottomMargin: 18
+        width: Math.min(parent.width - 36, toastText.implicitWidth + 28)
+        height: 38
+        tone: "muted"
+        cornerRadius: 6
         visible: showToast
         opacity: showToast ? 1.0 : 0.0
-        
+
         Behavior on opacity {
-            NumberAnimation { duration: 200 }
+            NumberAnimation { duration: 150 }
         }
-        
-        Text {
+
+        Label {
             id: toastText
             text: toastMessage
-            color: "white"
-            font.pointSize: 12
+            color: window ? window.textColor : "#fafafa"
+            font.pointSize: 11
             anchors.centerIn: parent
         }
     }
-    
-    // Timer for auto-hiding toast
+
     Timer {
         id: toastTimer
         interval: 2000
-        onTriggered: {
-            showToast = false
-        }
+        onTriggered: showToast = false
     }
-    
-    // Timer for delayed close
+
     Timer {
         id: closeTimer
         interval: 1000
-        onTriggered: {
-            closeMenu()
-        }
+        onTriggered: closeMenu()
     }
 
-    // ServerCommandManager connection
     Connections {
         target: quickMenuManager.serverCommandManager
+
         function onCommandsRefreshed() {
-            console.log("Server commands refreshed, updating model...");
-            serverCommandsModel.clear();
-            var commandIds = quickMenuManager.serverCommandManager.getAvailableCommands();
+            serverCommandsModel.clear()
+            var commandIds = quickMenuManager.serverCommandManager.getAvailableCommands()
             for (var i = 0; i < commandIds.length; i++) {
-                var commandId = commandIds[i];
-                var icon = "⚙️"; // Default
-                if (commandId.toLowerCase() === "shutdown") {
-                    icon = "⏻";
-                } else if (commandId.toLowerCase() === "restart") {
-                    icon = "🔄";
-                }
+                var commandId = commandIds[i]
                 serverCommandsModel.append({
-                    icon: icon,
+                    iconSource: quickMenu.commandIcon(commandId),
                     text: quickMenuManager.serverCommandManager.getCommandName(commandId),
-                    action: commandId, // Use command ID as the action
+                    action: commandId,
                     description: quickMenuManager.serverCommandManager.getCommandDescription(commandId)
-                });
+                })
             }
-            console.log("Server commands model updated with", serverCommandsModel.count, "commands");
         }
+
         function onCommandExecuted(commandId, success, result) {
-            showActionFeedback(success ? "Command '" + commandId + "' executed successfully" : "Command '" + commandId + "' failed: " + result);
-        }
-    }
-    
-    // Main menu model
-    ListModel {
-        id: mainMenuModel
-        ListElement {
-            text: qsTr("Disconnect")
-            icon: "⏹"
-            action: "disconnect"
-            description: qsTr("Disconnect from server")
-        }
-        ListElement {
-            text: qsTr("Quit")
-            icon: "❌"
-            action: "quit"
-            description: qsTr("Quit streaming session")
-        }
-        ListElement {
-            text: qsTr("Server Commands")
-            icon: "⚙"
-            action: "server_commands"
-            description: qsTr("Access server control commands")
-        }
-        ListElement {
-            text: qsTr("Clipboard Upload")
-            icon: "📋"
-            action: "clipboard_upload"
-            description: qsTr("Upload clipboard to server")
-        }
-        ListElement {
-            text: qsTr("Fetch Clipboard")
-            icon: "📥"
-            action: "clipboard_fetch"
-            description: qsTr("Fetch clipboard from server")
-        }
-        ListElement {
-            text: qsTr("Toggle Performance Stats")
-            icon: "📊"
-            action: "toggle_stats"
-            description: qsTr("Show/hide performance statistics")
-        }
-        ListElement {
-            text: qsTr("Toggle Mouse Capture")
-            icon: "🖱"
-            action: "toggle_mouse"
-            description: qsTr("Toggle mouse capture mode")
-        }
-        ListElement {
-            text: qsTr("Toggle Keyboard Capture")
-            icon: "⌨"
-            action: "toggle_keyboard"
-            description: qsTr("Toggle keyboard capture mode")
-        }
-        ListElement {
-            text: qsTr("Toggle Fullscreen")
-            icon: "🖥"
-            action: "toggle_fullscreen"
-            description: qsTr("Toggle fullscreen mode")
-        }
-    }
-    
-    function closeMenuDelayed() {
-        closeTimer.restart();
-    }
-
-    // Functions
-    function closeMenu() {
-        // Only call backend hide - don't set QML invisible
-            if (typeof quickMenuManager !== 'undefined') {
-                showActionFeedback("Closing menu...")  // Feedback when closing
-            quickMenuManager.hide();
-        }
-    }
-    
-    function executeCurrentItem() {
-        var currentItem = menuListView.model.get(menuListView.currentIndex)
-        if (currentItem) {
-            executeAction(currentItem.action)
-        }
-    }
-    
-    function executeAction(action) {
-        console.log("Executing action:", action)
-        
-        // Handle navigation actions
-        if (action === "server_commands") {
-            if (quickMenuManager.serverCommandManager && quickMenuManager.serverCommandManager.hasPermission) {
-                currentMenu = "server_commands";
-            } else {
-                showActionFeedback("Server commands not available or no permission");
-                closeMenuDelayed();
-            }
-            return;
-        } else { // It might be a server command
-            for (var i = 0; i < serverCommandsModel.count; i++) {
-                if (serverCommandsModel.get(i).action === action) {
-                    if (quickMenuManager.serverCommandManager) {
-                        quickMenuManager.serverCommandManager.executeCommand(action);
-                        closeMenuDelayed();
-                    }
-                    return;
-                }
-            }
-        }
-        
-        // Show action feedback
-        showActionFeedback(action)
-        
-        // Call the backend manager to execute the action
-        if (typeof quickMenuManager !== 'undefined') {
-            quickMenuManager.executeAction(action)
-        }
-        
-        // Close menu after action (except for navigation)
-        closeMenuDelayed();
-    }
-    
-    function showActionFeedback(action) {
-        var message = ""
-        switch(action) {
-            case "disconnect":
-                message = "Disconnecting from server..."
-                break
-            case "quit":
-                message = "Quitting session..."
-                break
-            case "server_restart":
-                message = ServerCommandManager.hasServerCommands ? "Restarting server..." : "Server commands not available"
-                break
-            case "server_shutdown":
-                message = ServerCommandManager.hasServerCommands ? "Shutting down server..." : "Server commands not available"
-                break
-            case "server_suspend":
-                message = ServerCommandManager.hasServerCommands ? "Suspending server..." : "Server commands not available"
-                break
-            case "clipboard_upload":
-                message = "Uploading clipboard to server..."
-                break
-            case "clipboard_fetch":
-                message = "Fetching clipboard from server..."
-                break
-            case "toggle_stats":
-                message = "Toggling performance stats..."
-                break
-            case "toggle_mouse":
-                message = "Toggling mouse capture..."
-                break
-            case "toggle_keyboard":
-                message = "Toggling keyboard capture..."
-                break
-            case "toggle_fullscreen":
-                message = "Toggling fullscreen..."
-                break
-            default:
-                message = "Executing action..."
-        }
-        
-        if (message) {
-            toastMessage = message
-            showToast = true
-            toastTimer.restart()
-        }
-    }
-    
-    // Make menu focusable and reset state
-    Component.onCompleted: {
-        focus = true
-        currentMenu = "main"  // Always start with main menu
-
-        if (quickMenuManager.serverCommandManager) {
-            console.log("QuickMenu: Refreshing server commands on open");
-            quickMenuManager.serverCommandManager.refreshCommands();
+            showActionFeedback(success
+                               ? qsTr("Command '%1' executed successfully").arg(commandId)
+                               : qsTr("Command '%1' failed: %2").arg(commandId).arg(result))
         }
     }
 }
-

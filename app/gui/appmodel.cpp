@@ -39,6 +39,67 @@ QString AppModel::getRunningAppName()
     return nullptr;
 }
 
+bool AppModel::isApolloHost() const
+{
+    if (!m_Computer) {
+        return false;
+    }
+
+    QReadLocker lock(&m_Computer->lock);
+    return m_Computer->isApolloHost;
+}
+
+bool AppModel::usesApolloPermissionSystem() const
+{
+    if (!m_Computer) {
+        return false;
+    }
+
+    QReadLocker lock(&m_Computer->lock);
+    return m_Computer->hasPermissionSystem;
+}
+
+bool AppModel::hasLaunchAppPermission() const
+{
+    if (!m_Computer) {
+        return false;
+    }
+
+    QReadLocker lock(&m_Computer->lock);
+
+    if (!m_Computer->isApolloHost) {
+        return true;
+    }
+
+    if (!m_Computer->hasPermissionSystem) {
+        return true;
+    }
+
+    return ServerPermissions::canLaunchApps(m_Computer->serverPermissions);
+}
+
+QString AppModel::launchPermissionErrorText() const
+{
+    if (!m_Computer) {
+        return tr("No host is currently selected.");
+    }
+
+    QReadLocker lock(&m_Computer->lock);
+
+    if (!m_Computer->isApolloHost) {
+        return tr("This host does not advertise Apollo launch permissions.");
+    }
+
+    const QString permissionSummary = ServerPermissions::formatPermissions(m_Computer->serverPermissions, true);
+
+    if (!m_Computer->hasPermissionSystem) {
+        return tr("This Apollo host does not advertise the new permission system, so Artemis cannot verify launch permission state.");
+    }
+
+    return tr("This Apollo client is paired, but it was not granted Launch Apps permission on \"%1\".\n\nCurrent permissions: %2\n\nOpen the Apollo web UI, grant Launch Apps to this client, then try again.")
+            .arg(m_Computer->name, permissionSummary);
+}
+
 Session* AppModel::createSessionForApp(int appIndex)
 {
     Q_ASSERT(appIndex < m_VisibleApps.count());

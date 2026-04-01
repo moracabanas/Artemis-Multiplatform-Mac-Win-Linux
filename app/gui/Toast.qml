@@ -5,11 +5,11 @@ Rectangle {
     id: toast
     width: 300
     height: 50
-    radius: 10
-    color: "#2A2A2A"
-    border.color: "#4A4A4A"
+    radius: 16
+    color: window ? window.elevatedSurfaceColor : "#151518"
+    border.color: window ? window.borderStrongColor : "#3f3f46"
     border.width: 1
-    opacity: 0.9
+    opacity: 0.95
     
     property alias text: toastText.text
     

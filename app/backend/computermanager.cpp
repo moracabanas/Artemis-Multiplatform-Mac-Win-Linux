@@ -361,6 +361,8 @@ void ComputerManager::startPolling()
         return;
     }
 
+    qInfo() << "Starting host polling and LAN discovery";
+
     if (m_Prefs->enableMdns) {
         // Start an MDNS query for GameStream hosts
         m_MdnsServer.reset(new QMdnsEngine::Server());
