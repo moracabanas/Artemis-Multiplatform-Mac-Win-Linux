@@ -1,5 +1,6 @@
 name: Development Build
 
+# Artemis Desktop CI/CD Pipeline - Auto-generated build for all platforms
 # This workflow handles development builds with intelligent build skipping:
 # - Feature branches: Build artifacts, no releases (testing only)  
 # - Develop branch: Build artifacts + create development releases (when meaningful changes are merged)
